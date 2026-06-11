@@ -7,6 +7,7 @@
 <script>
 window.GRAPH_BLOCKS_CONFIG = { clientId: "6048e64c-1feb-4b23-9158-ec302c5f1164", tenantId: "" };
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -33,7 +34,7 @@ window.GRAPH_BLOCKS_CONFIG = { clientId: "6048e64c-1feb-4b23-9158-ec302c5f1164",
 })();
 </script>
 <script src="graph-paths.js"></script>
-<style>body{margin:0;background:#161a22} input,select,textarea{font-family:inherit}</style>
+<style>body{margin:0;background:#0D0F12;font-family:'Space Grotesk',system-ui,sans-serif} input,select,textarea,button{font-family:inherit}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -48,49 +49,94 @@ const { useState, useMemo } = React;
 
 const THEMES = {
   dark: {
-    bg: "#14171C",
-    bgGradient: "linear-gradient(135deg, #161a22 0%, #171f2b 50%, #14201d 100%)",
-    surface: "#1C2129",
-    glass: "rgba(40,48,60,0.55)",
-    glassBorder: "rgba(255,255,255,0.10)",
-    panel: "#232A34",
-    line: "#2E3744",
-    text: "#E6EAF0",
-    dim: "#8B96A5",
-    method: "#F0A04B",
-    version: "#A78BFA",
-    resource: "#2DD4BF",
-    param: "#60A5FA",
-    header: "#F472B6",
-    danger: "#F87171",
-    ok: "#4ADE80",
-    ink: "#10131A",
-    blockText: "#FFFFFF",
+    bg: "#0D0F12",
+    bgGradient: "radial-gradient(120% 80% at 50% -10%, #161b22 0%, #0D0F12 60%)",
+    surface: "#15181E",
+    glass: "#15181E",
+    glassBorder: "#262B33",
+    panel: "#1B1F26",
+    line: "#262B33",
+    text: "#E8EBF0",
+    dim: "#7A828E",
+    method: "#E8A04B",
+    version: "#9B8CFF",
+    resource: "#39D3B4",
+    param: "#5B9DF0",
+    header: "#EC6FA8",
+    danger: "#F2706E",
+    ok: "#46C97E",
+    ink: "#0D0F12",
+    blockText: "#0D0F12",
   },
   light: {
-    bg: "#F3F5F9",
-    bgGradient: "linear-gradient(135deg, #eef2f8 0%, #e9eef6 50%, #eaf3f0 100%)",
+    bg: "#FBFBFC",
+    bgGradient: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #F4F5F7 60%)",
     surface: "#FFFFFF",
-    glass: "rgba(255,255,255,0.60)",
-    glassBorder: "rgba(120,130,150,0.22)",
-    panel: "#EDF0F5",
-    line: "#D8DEE8",
-    text: "#1B2430",
-    dim: "#5D6B7E",
-    method: "#D97E1F",
-    version: "#7C5CE0",
-    resource: "#0E9E8E",
-    param: "#2F6FE4",
-    header: "#DB3D8B",
-    danger: "#C92A2A",
-    ok: "#15803D",
+    glass: "#FFFFFF",
+    glassBorder: "#E4E7EC",
+    panel: "#F5F6F8",
+    line: "#E4E7EC",
+    text: "#181B21",
+    dim: "#6B7280",
+    method: "#C77A1A",
+    version: "#6B54D6",
+    resource: "#0C9484",
+    param: "#2D6CE0",
+    header: "#CE3B82",
+    danger: "#D33A38",
+    ok: "#1A8F4E",
     ink: "#FFFFFF",
-    blockText: "#11161D",
+    blockText: "#FFFFFF",
   },
 };
 let C = THEMES.dark;
 
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const SANS = "'Space Grotesk', 'Segoe UI', system-ui, sans-serif";
+
+// ── shared control styles (single source of truth) ──────────
+const field = (extra) => ({
+  background: C.panel,
+  color: C.text,
+  border: `1px solid ${C.line}`,
+  borderRadius: 7,
+  padding: "8px 11px",
+  fontSize: 13,
+  fontFamily: MONO,
+  outline: "none",
+  ...extra,
+});
+const ghostBtn = (accent, extra) => ({
+  background: "transparent",
+  color: accent || C.dim,
+  border: `1px solid ${accent ? hexA(accent, 0.4) : C.line}`,
+  borderRadius: 7,
+  padding: "5px 11px",
+  fontSize: 12,
+  fontWeight: 600,
+  ...extra,
+});
+const callout = (accent) => ({
+  fontSize: 12,
+  lineHeight: 1.55,
+  padding: "9px 12px",
+  borderRadius: 7,
+  background: hexA(accent, 0.1),
+  color: accent,
+  border: `1px solid ${hexA(accent, 0.28)}`,
+});
+const primaryBtn = (bg, extra) => ({
+  width: "100%",
+  padding: "9px 14px",
+  borderRadius: 8,
+  fontSize: 13.5,
+  fontWeight: 700,
+  background: bg,
+  color: C.ink,
+  border: "none",
+  cursor: "pointer",
+  ...extra,
+});
 
 // ── Resource catalog ─────────────────────────────────────────
 const RESOURCES = [
@@ -421,12 +467,15 @@ function Chip({ active, color, children, onClick, title }) {
     <button
       onClick={onClick}
       title={title}
-      className="px-3 py-1.5 rounded-md text-sm font-semibold transition-transform"
       style={{
+        padding: "5px 11px",
+        borderRadius: 6,
+        fontSize: 12.5,
+        fontWeight: 600,
+        fontFamily: MONO,
         background: active ? color : "transparent",
         color: active ? C.ink : C.dim,
         border: `1px solid ${active ? color : C.line}`,
-        fontFamily: MONO,
       }}
     >
       {children}
@@ -447,22 +496,19 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
       <div className="relative">
         <button
           onClick={onClick}
-          className="relative flex flex-col items-start transition-transform"
+          className="relative flex flex-col items-start transition-colors"
           style={{
-            background: hexA(color, 0.22),
-            border: `1px solid ${hexA(color, 0.6)}`,
+            background: color,
+            border: `1px solid ${color}`,
             color: C.blockText,
-            borderRadius: 11,
-            padding: "5px 13px",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25)",
+            borderRadius: 6,
+            padding: "4px 12px",
           }}
         >
-          <span className="font-bold uppercase tracking-wide" style={{ opacity: 0.75, fontSize: 8, lineHeight: 1.2, color }}>
-            {label} {options && "▾"}
+          <span className="font-semibold uppercase" style={{ opacity: 0.62, fontSize: 8.5, letterSpacing: "0.08em", lineHeight: 1.3 }}>
+            {label}{options && " ▾"}
           </span>
-          <span className="font-bold" style={{ fontFamily: MONO, fontSize: 13, maxWidth: 320, wordBreak: "break-word", textAlign: "left", lineHeight: 1.1 }}>
+          <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, maxWidth: 520, wordBreak: "break-word", textAlign: "left", lineHeight: 1.15 }}>
             {value}
           </span>
         </button>
@@ -491,8 +537,7 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
       {onRemove && (
         <button
           onClick={onRemove}
-          className="ml-2 mr-1 w-5 h-5 rounded-full text-xs leading-none"
-          style={{ background: C.glass, color: C.dim, border: `1px solid ${C.glassBorder}` }}
+          style={{ marginLeft: 3, width: 16, height: 16, borderRadius: 4, fontSize: 12, lineHeight: 1, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, flexShrink: 0 }}
           title="Remove block"
         >
           ×
@@ -504,17 +549,19 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
 
 function Section({ title, accent, children, right }) {
   return (
-    <div className="rounded-xl p-4" style={{ background: C.glass, border: `1px solid ${C.glassBorder}`, backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)" }}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-sm" style={{ background: accent }} />
-          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: C.dim }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center gap-2.5">
+          <span style={{ width: 3, height: 13, borderRadius: 2, background: accent, display: "inline-block" }} />
+          <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>
             {title}
           </h2>
         </div>
         {right}
       </div>
-      {children}
+      <div className="px-4 py-4">
+        {children}
+      </div>
     </div>
   );
 }
@@ -533,8 +580,7 @@ function CopyBtn({ text }) {
         setDone(true);
         setTimeout(() => setDone(false), 1200);
       }}
-      className="px-2.5 py-1 rounded text-xs font-semibold"
-      style={{ background: done ? C.ok : C.panel, color: done ? C.ink : C.dim, border: `1px solid ${C.line}` }}
+      style={done ? { ...ghostBtn(), background: C.ok, color: C.ink, border: `1px solid ${C.ok}` } : ghostBtn()}
     >
       {done ? "Copied" : "Copy"}
     </button>
@@ -581,10 +627,72 @@ function downloadCSV(rows, name) {
   URL.revokeObjectURL(url);
 }
 
+const FAQ = [
+  {
+    q: "What is Graph Builder?",
+    a: "A visual way to build Microsoft Graph API queries by snapping blocks together instead of typing URLs. Pick a method, version, and resource, add filters and options, then run it live against your tenant — or copy the equivalent PowerShell. Think of it as a friendlier Graph Explorer that also teaches you the SDK.",
+  },
+  {
+    q: "How do I build a query?",
+    a: "Each block in the “Your query” bar is a dropdown. Set the method (GET/POST/…), the version (v1.0 or beta), and the resource. Then use the “+ $filter”, “+ $select”, “+ $top” buttons to add query options — every value is a dropdown or picker, so you can’t build invalid syntax. The Request URL updates live as you go.",
+  },
+  {
+    q: "How do I run a query and see results?",
+    a: "Click “Sign in with Microsoft” in the Run it panel, then hit Run. Results appear in the right column as a table — toggle Raw JSON to see the full response, or Export CSV to open it in Excel.",
+  },
+  {
+    q: "Can I create, update, or delete things (not just read)?",
+    a: "Yes. Set the method block to POST (create), PATCH (update), or DELETE. For POST/PATCH a JSON body editor appears. Because these change your tenant, you’ll be asked to consent to a read-write permission the first time, and Graph Builder shows an explicit confirmation with the exact method and URL before sending. Writes are real and aren’t undoable from here — double-check the request first. If you’re not an admin, write scopes for Intune/Directory may need admin approval.",
+  },
+  {
+    q: "What permissions does it use? Is it safe?",
+    a: "Signing in grants only your identity — nothing more. Each query then asks for just the one permission it needs, the first time you run it (least-privilege, exactly like Graph Explorer). GET queries request read-only scopes; POST/PATCH/DELETE request the matching read-write scope and will change data in your tenant — you’ll get an explicit confirmation before any write is sent. Either way, your data and tokens stay in your browser and are never sent anywhere else, and you can only do what your own Entra permissions already allow.",
+  },
+  {
+    q: "Why does it say a permission is needed when I Run?",
+    a: "That’s the Microsoft consent prompt. The first time a query needs a given permission, you approve it once. Some permissions (most DeviceManagement and Directory scopes) require a global admin to approve — if you’re not an admin, ask one to use the “pre-consent” link once for the whole org.",
+  },
+  {
+    q: "How do I look at one specific item?",
+    a: "Run a query that returns a list, then click any row — it reloads that single object by its id. Or add the “+ /{id}” block and paste an id directly. Once you’re on a single object, the “Navigate from this object” chips let you jump to its related data (a user’s manager, a device’s apps) in one click.",
+  },
+  {
+    q: "Can I find an endpoint that isn’t in the dropdown?",
+    a: "Yes — pick “Search every Graph path” in the resource dropdown. It searches all 27,000+ official Graph endpoints. Type words to narrow (e.g. “autopilot”), and tap a result to use it. Property pickers fill in automatically after you run it once.",
+  },
+  {
+    q: "How do I save or re-run a query?",
+    a: "Open the Library (top right). Every query you run is auto-logged in Recent history — click any to reload it. Hit “+ Save current” to name and keep a query permanently. Both persist on your device across visits.",
+  },
+  {
+    q: "What’s the PowerShell / SDK section for?",
+    a: "It shows the exact PowerShell command equivalent to your visual query — both Invoke-MgGraphRequest and the matching Get-Mg cmdlet. Great for learning the Graph PowerShell SDK, or for copying a working command into a script. Turn on Learn mode for inline explanations of what each piece does.",
+  },
+];
+
+function FaqItem({ q, a }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderBottom: `1px solid ${C.line}` }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between text-left"
+        style={{ padding: "11px 4px", background: "none", border: "none", cursor: "pointer" }}
+      >
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>{q}</span>
+        <span style={{ color: C.dim, fontSize: 15, flexShrink: 0, marginLeft: 12 }}>{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <p style={{ fontSize: 12.5, lineHeight: 1.6, color: C.dim, padding: "0 4px 12px" }}>{a}</p>
+      )}
+    </div>
+  );
+}
+
 function Tip({ children }) {
   return (
-    <div className="flex gap-2 mt-3 px-3 py-2 rounded-lg text-xs leading-relaxed" style={{ background: "#60A5FA10", color: C.dim, border: `1px solid ${C.line}` }}>
-      <span className="flex-shrink-0 font-bold" style={{ color: C.param }}>TIP</span>
+    <div className="flex gap-2.5 mt-3 text-xs leading-relaxed" style={{ paddingLeft: 11, borderLeft: `2px solid ${hexA(C.param, 0.5)}`, color: C.dim }}>
+      <span style={{ flexShrink: 0, fontWeight: 700, fontSize: 9.5, letterSpacing: "0.08em", color: C.param, paddingTop: 1 }}>TIP</span>
       <span>{children}</span>
     </div>
   );
@@ -617,9 +725,62 @@ function GraphBlocks() {
   const [account, setAccount] = useState(null);
   const [msalApp, setMsalApp] = useState(null);
   const [showSetup, setShowSetup] = useState(false);
-  const [selectedScopes, setSelectedScopes] = useState([]);
   const [consented, setConsented] = useState([]);
   const [customPath, setCustomPath] = useState("me/drive/root/children");
+  const [history, setHistory] = useState([]);
+  const [saved, setSaved] = useState([]);
+  const [railOpen, setRailOpen] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // ── persistence (localStorage; artifact storage if present) ──
+  const persist = (key, val) => {
+    try { window.localStorage.setItem("gb:" + key, JSON.stringify(val)); } catch {}
+  };
+  const hydrate = (key, set) => {
+    try { const v = window.localStorage.getItem("gb:" + key); if (v) set(JSON.parse(v)); } catch {}
+  };
+  React.useEffect(() => { hydrate("history", setHistory); hydrate("saved", setSaved); }, []);
+
+  // snapshot of the current query for save/history
+  const snapshot = () => ({
+    method, version, resourceId, objectId, customPath,
+    params: JSON.parse(JSON.stringify(params)),
+    label: `${method} /${res.path.split("/").slice(-2).join("/")}`,
+    url, at: Date.now(),
+  });
+  const applySnapshot = (s) => {
+    setMethod(s.method); setVersion(s.version); setResourceId(s.resourceId);
+    setObjectId(s.objectId || ""); if (s.customPath) setCustomPath(s.customPath);
+    setParams(s.params || []); setEditing(null); setResult(null); setError(null);
+  };
+  const logHistory = (s) => {
+    setHistory((prev) => {
+      const next = [s, ...prev.filter((h) => h.url !== s.url)].slice(0, 25);
+      persist("history", next); return next;
+    });
+  };
+  const saveQuery = () => {
+    const name = window.prompt("Name this query:", res.label);
+    if (!name) return;
+    setSaved((prev) => {
+      const next = [{ ...snapshot(), name }, ...prev].slice(0, 100);
+      persist("saved", next); return next;
+    });
+  };
+  const removeSaved = (at) => setSaved((prev) => { const next = prev.filter((s) => s.at !== at); persist("saved", next); return next; });
+
+  // relationship navigation: jump to {resource}/{id}/{relationship} as a fresh query
+  const navigateRelationship = (rel) => {
+    const base = res.path;
+    setCustomPath(`${base}/${objectId.trim()}/${rel}`);
+    setResourceId("custom");
+    setObjectId("");
+    setParams([]);
+    setEditing(null);
+    setResult(null);
+    setError(null);
+    setTimeout(() => run(), 0);
+  };
 
   const res =
     resourceId === "custom"
@@ -678,11 +839,15 @@ function GraphBlocks() {
     ["me", "User.Read"],
   ];
   const queryScope = useMemo(() => {
-    if (res.scope) return res.scope;
-    const p = res.path.replace(/^\//, "");
-    const hit = SCOPE_BY_PREFIX.find(([pre]) => p.startsWith(pre));
-    return hit ? hit[1] : "User.Read";
-  }, [res]);
+    const base = res.scope || (() => {
+      const p = res.path.replace(/^\//, "");
+      const hit = SCOPE_BY_PREFIX.find(([pre]) => p.startsWith(pre));
+      return hit ? hit[1] : "User.Read";
+    })();
+    // write methods need the ReadWrite variant of the same scope
+    if (method !== "GET") return base.replace(/\.Read(\.All)?$/, ".ReadWrite$1");
+    return base;
+  }, [res, method]);
 
   const ps = useMemo(() => {
     const lines = [res.scope ? `Connect-MgGraph -Scopes '${res.scope}'` : `Connect-MgGraph  # add -Scopes for this endpoint (Find-MgGraphCommand shows them)`];
@@ -747,10 +912,10 @@ function GraphBlocks() {
   };
 
   const paramValue = (p) => {
-    if (p.type === "select") return p.props.length ? p.props.join(",").slice(0, 64) + (p.props.join(",").length > 64 ? "…" : "") : "pick…";
+    if (p.type === "select") return p.props.length ? p.props.join(", ") : "pick…";
     if (p.type === "filter") {
       const c = p.clauses.filter((c) => c.prop);
-      return c.length ? c.map((x) => `${x.prop} ${x.op} ${x.val || "?"}`).join(` ${p.join} `).slice(0, 64) : "build…";
+      return c.length ? c.map((x) => `${x.prop} ${x.op} ${x.val || "?"}`).join(` ${p.join} `) : "build…";
     }
     if (p.type === "top") return p.value || "?";
     if (p.type === "orderby") return p.prop ? `${p.prop} ${p.dir}` : "pick…";
@@ -805,7 +970,7 @@ function GraphBlocks() {
 
   function adminConsentUrl() {
     const t = tenantId.trim() || "organizations";
-    const chosen = selectedScopes.length ? selectedScopes : READ_SCOPES;
+    const chosen = READ_SCOPES;
     return `https://login.microsoftonline.com/${t}/v2.0/adminconsent?client_id=${clientId.trim()}&scope=${encodeURIComponent(chosen.join(" "))}&redirect_uri=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
   }
 
@@ -831,7 +996,7 @@ function GraphBlocks() {
       setError("Sign in first — read-only consent takes one tap.");
       return;
     }
-    if (method !== "GET" && !uri && !window.confirm(`This will send a real ${method} to your tenant. Continue?`)) return;
+    if (method !== "GET" && !uri && !window.confirm(`⚠ WRITE OPERATION\n\nThis sends a real ${method} to your tenant and will change data:\n\n${url}\n\nThis cannot be undone by Graph Builder. Continue?`)) return;
     setRunning(true);
     setNeededScopes([]);
     if (!uri) {
@@ -856,9 +1021,12 @@ function GraphBlocks() {
         const msg = data?.error?.message || data?.Message || `HTTP ${r.status}`;
         const code = data?.error?.code ? ` (${data.error.code})` : "";
         // Graph often lists acceptable scopes in the message on a 403 — extract them
-        const found = (msg.match(/[A-Za-z][A-Za-z.]*\.(?:ReadWrite|Read)(?:\.All)?/g) || []);
-        const reads = [...new Set(found)].filter((s) => /\.Read(\.All)?$/.test(s));
-        setNeededScopes(reads.length ? reads : [...new Set(found)]);
+        const found = [...new Set(msg.match(/[A-Za-z][A-Za-z.]*\.(?:ReadWrite|Read)(?:\.All)?/g) || [])];
+        // for writes, surface ReadWrite scopes; for reads, prefer Read but accept ReadWrite
+        const preferred = method === "GET"
+          ? found.filter((s) => /\.Read(\.All)?$/.test(s))
+          : found.filter((s) => /\.ReadWrite(\.All)?$/.test(s));
+        setNeededScopes(preferred.length ? preferred : found);
         throw new Error(msg + code);
       }
       if (uri && result?.value && data?.value) {
@@ -873,6 +1041,7 @@ function GraphBlocks() {
         if (keys.length) setDiscoveredProps(keys);
       }
       setNextLink(data?.["@odata.nextLink"] || null);
+      if (!uri) logHistory(snapshot());  // only log fresh runs, not paging
     } catch (e) {
       setError(e.message === "Failed to fetch" ? "Request blocked or network error — your session may have expired (try signing out and back in), or the endpoint rejected the call." : e.message);
     } finally {
@@ -894,7 +1063,7 @@ function GraphBlocks() {
     if (editing === null) return null;
     const propList = res.props.length ? res.props : discoveredProps;
     const close = (
-      <button onClick={() => setEditing(null)} className="px-2.5 py-1 rounded text-xs font-semibold" style={{ background: C.panel, color: C.dim, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setEditing(null)} style={ghostBtn()}>
         Done
       </button>
     );
@@ -912,8 +1081,8 @@ function GraphBlocks() {
             value={customPath}
             onChange={(e) => setCustomPath(e.target.value)}
             placeholder={idx ? "search all Graph paths, e.g. autopilot or users messages" : "e.g. me/drive/root/children"}
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-            style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+            className="w-full"
+            style={field()}
           />
           {idx ? (
             <>
@@ -957,8 +1126,8 @@ function GraphBlocks() {
             value={objectId}
             onChange={(e) => setObjectId(e.target.value)}
             placeholder="00000000-0000-…"
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-            style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+            className="w-full"
+            style={field()}
           />
           {learn && SDK[res.id] && (
             <Tip>With an ID, the SDK call switches to the -{SDK[res.id].id} parameter — and query params no longer apply, since you're fetching one object instead of a collection.</Tip>
@@ -989,8 +1158,8 @@ function GraphBlocks() {
                 value={p.props.join(",")}
                 onChange={(e) => updateParam(editing, { props: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })}
                 placeholder="comma-separated, e.g. id,displayName"
-                className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+                className="w-full"
+                style={field()}
               />
             )}
             {!res.props.length && !discoveredProps.length && (
@@ -1011,8 +1180,8 @@ function GraphBlocks() {
                   <select
                     value={c.prop}
                     onChange={(e) => updateParam(editing, { clauses: p.clauses.map((x, j) => (j === ci ? { ...x, prop: e.target.value } : x)) })}
-                    className="px-2 py-2 rounded-lg text-sm"
-                    style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+                    className=""
+                    style={field()}
                   >
                     <option value="">property…</option>
                     {propList.map((pr) => <option key={pr} value={pr}>{pr}</option>)}
@@ -1022,15 +1191,15 @@ function GraphBlocks() {
                     value={c.prop}
                     onChange={(e) => updateParam(editing, { clauses: p.clauses.map((x, j) => (j === ci ? { ...x, prop: e.target.value } : x)) })}
                     placeholder="property"
-                    className="px-3 py-2 rounded-lg text-sm outline-none"
-                    style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO, width: 130 }}
+                    className=""
+                    style={field({ width: 130 })}
                   />
                 )}
                 <select
                   value={c.op}
                   onChange={(e) => updateParam(editing, { clauses: p.clauses.map((x, j) => (j === ci ? { ...x, op: e.target.value } : x)) })}
-                  className="px-2 py-2 rounded-lg text-sm"
-                  style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}` }}
+                  className=""
+                  style={field()}
                 >
                   {OPS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
@@ -1038,8 +1207,8 @@ function GraphBlocks() {
                   <select
                     value={c.val}
                     onChange={(e) => updateParam(editing, { clauses: p.clauses.map((x, j) => (j === ci ? { ...x, val: e.target.value } : x)) })}
-                    className="px-2 py-2 rounded-lg text-sm"
-                    style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+                    className=""
+                    style={field()}
                   >
                     <option value="">value…</option>
                     <option value="true">true</option>
@@ -1050,8 +1219,8 @@ function GraphBlocks() {
                     value={c.val}
                     onChange={(e) => updateParam(editing, { clauses: p.clauses.map((x, j) => (j === ci ? { ...x, val: e.target.value } : x)) })}
                     placeholder="value"
-                    className="px-3 py-2 rounded-lg text-sm flex-1 outline-none"
-                    style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+                    className="flex-1"
+                    style={field()}
                   />
                 )}
                 {p.clauses.length > 1 && (
@@ -1062,8 +1231,7 @@ function GraphBlocks() {
             <div className="flex items-center gap-2 mt-1">
               <button
                 onClick={() => updateParam(editing, { clauses: [...p.clauses, { prop: "", op: "eq", val: "" }] })}
-                className="px-3 py-1.5 rounded-md text-sm font-semibold"
-                style={{ background: C.panel, color: C.param, border: `1px solid ${C.line}` }}
+                style={ghostBtn(C.param)}
               >
                 + clause
               </button>
@@ -1085,8 +1253,8 @@ function GraphBlocks() {
               type="number" min="1" max="999"
               value={p.value}
               onChange={(e) => updateParam(editing, { value: e.target.value })}
-              className="w-32 px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+              className="w-32"
+              style={field()}
             />
             {learn && <Tip>{TIPS.top}</Tip>}
           </Section>
@@ -1099,8 +1267,8 @@ function GraphBlocks() {
                 <select
                   value={p.prop}
                   onChange={(e) => updateParam(editing, { prop: e.target.value })}
-                  className="px-2 py-2 rounded-lg text-sm"
-                  style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+                  className=""
+                  style={field()}
                 >
                   <option value="">property…</option>
                   {propList.map((pr) => <option key={pr} value={pr}>{pr}</option>)}
@@ -1110,8 +1278,8 @@ function GraphBlocks() {
                   value={p.prop}
                   onChange={(e) => updateParam(editing, { prop: e.target.value })}
                   placeholder="property"
-                  className="px-3 py-2 rounded-lg text-sm outline-none"
-                  style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO, width: 130 }}
+                  className=""
+                  style={field({ width: 130 })}
                 />
               )}
               <Chip active={p.dir === "asc"} color={C.param} onClick={() => updateParam(editing, { dir: "asc" })}>asc</Chip>
@@ -1126,8 +1294,8 @@ function GraphBlocks() {
             <select
               value={p.value}
               onChange={(e) => updateParam(editing, { value: e.target.value })}
-              className="px-3 py-2 rounded-lg text-sm"
-              style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+              className=""
+              style={field()}
             >
               <option value="">choose relationship…</option>
               {(EXPANDS[res.id] || []).map((x) => (
@@ -1157,37 +1325,120 @@ function GraphBlocks() {
         }
         select optgroup { font-style: normal; font-weight: 700; color: ${C.dim}; }
       `}</style>
-      <div className="mx-auto px-6 pt-6" style={{ maxWidth: 1600 }}>
+      <div className="mx-auto px-6 pt-7" style={{ maxWidth: 1600 }}>
 
         {/* header */}
-        <div className="flex items-end justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">
-              Graph<span style={{ color: C.resource }}> Builder</span>
+        <div className="flex items-center justify-between mb-6 pb-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div className="flex items-baseline gap-3">
+            <h1 style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.01em", color: C.text }}>
+              Graph Builder
             </h1>
-            <p className="text-sm" style={{ color: C.dim }}>Snap blocks together. Get a valid Graph query.</p>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: C.dim, letterSpacing: "0.02em" }}>
+              microsoft graph · visual query console
+            </span>
           </div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               title="Toggle light / dark mode"
-              className="px-2.5 py-1.5 rounded-md text-xs font-bold transition-transform"
-              style={{ background: "transparent", color: C.dim, border: `1px solid ${C.line}` }}
+              className="transition-colors"
+              style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "transparent", color: C.dim, border: `1px solid ${C.line}` }}
             >
-              {theme === "dark" ? "☀️" : "🌙"}
+              {theme === "dark" ? "☀" : "☾"}
             </button>
             <button
               onClick={() => setLearn(!learn)}
-              className="px-3 py-1.5 rounded-md text-xs font-bold transition-transform"
-              style={{ background: learn ? C.param : "transparent", color: learn ? C.ink : C.dim, border: `1px solid ${learn ? C.param : C.line}` }}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: learn ? hexA(C.param, 0.14) : "transparent", color: learn ? C.param : C.dim, border: `1px solid ${learn ? hexA(C.param, 0.4) : C.line}` }}
             >
-              💡 Learn mode {learn ? "on" : "off"}
+              Learn mode {learn ? "on" : "off"}
+            </button>
+            <button
+              onClick={() => setRailOpen(!railOpen)}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: railOpen ? hexA(C.resource, 0.14) : "transparent", color: railOpen ? C.resource : C.dim, border: `1px solid ${railOpen ? hexA(C.resource, 0.4) : C.line}` }}
+            >
+              ☰ Library
+            </button>
+            <button
+              onClick={() => setHelpOpen(!helpOpen)}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}` }}
+            >
+              ? Help
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-16">
-        <div className="space-y-4">
+        {helpOpen && (
+          <div className="mb-5" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+            <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <div className="flex items-center gap-2.5">
+                <span style={{ width: 3, height: 13, borderRadius: 2, background: C.param, display: "inline-block" }} />
+                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>How to use Graph Builder</h2>
+              </div>
+              <button onClick={() => setHelpOpen(false)} style={ghostBtn()}>Close</button>
+            </div>
+            <div className="px-4 py-2" style={{ maxWidth: 820 }}>
+              {FAQ.map((f, i) => <FaqItem key={i} q={f.q} a={f.a} />)}
+            </div>
+          </div>
+        )}
+
+        {railOpen && (
+          <div className="mb-5" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+            <div className="grid grid-cols-1 md:grid-cols-2">
+              <div style={{ borderRight: `1px solid ${C.line}` }}>
+                <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <div className="flex items-center gap-2.5">
+                    <span style={{ width: 3, height: 13, borderRadius: 2, background: C.method, display: "inline-block" }} />
+                    <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>Saved queries</h2>
+                  </div>
+                  <button onClick={saveQuery} style={ghostBtn(C.resource)}>+ Save current</button>
+                </div>
+                <div className="px-3 py-2" style={{ maxHeight: 200, overflowY: "auto" }}>
+                  {saved.length === 0 ? (
+                    <p className="text-xs px-1 py-3" style={{ color: C.dim }}>No saved queries yet. Build one and hit “Save current.”</p>
+                  ) : saved.map((s) => (
+                    <div key={s.at} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded" style={{ cursor: "pointer" }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <button onClick={() => applySnapshot(s)} className="flex-1 text-left min-w-0">
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+                        <div style={{ fontSize: 10.5, fontFamily: MONO, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.method} /{s.resourceId === "custom" ? s.customPath : s.resourceId}</div>
+                      </button>
+                      <button onClick={() => removeSaved(s.at)} style={{ color: C.dim, fontSize: 14, flexShrink: 0 }} title="Delete">×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <div className="flex items-center gap-2.5">
+                    <span style={{ width: 3, height: 13, borderRadius: 2, background: C.param, display: "inline-block" }} />
+                    <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>Recent history</h2>
+                  </div>
+                  {history.length > 0 && <button onClick={() => { setHistory([]); persist("history", []); }} style={ghostBtn()}>Clear</button>}
+                </div>
+                <div className="px-3 py-2" style={{ maxHeight: 200, overflowY: "auto" }}>
+                  {history.length === 0 ? (
+                    <p className="text-xs px-1 py-3" style={{ color: C.dim }}>Queries you run will appear here.</p>
+                  ) : history.map((h) => (
+                    <button key={h.at} onClick={() => applySnapshot(h)} className="w-full text-left px-2 py-1.5 rounded"
+                      onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ fontSize: 12, fontFamily: MONO, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.label}</div>
+                      <div style={{ fontSize: 10, color: C.dim }}>{new Date(h.at).toLocaleString()}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-16">
+        <div className="space-y-5">
 
         {/* canvas */}
         <Section title="Your query" accent={C.resource}>
@@ -1204,7 +1455,7 @@ function GraphBlocks() {
             />
             <Block
               color={C.resource} label="resource"
-              value={"/" + (res.path.length > 40 ? "…" + res.path.slice(-38) : res.path)}
+              value={"/" + res.path}
               options={[
                 ...(getPathIndex(version)
                   ? [{ group: `All Microsoft Graph — ${getPathIndex(version).length.toLocaleString()} ${version} paths`, items: [{ v: "custom", l: "🔍 Search every Graph path…" }] }]
@@ -1233,7 +1484,7 @@ function GraphBlocks() {
             {(objectId !== "" || editing === "id") && (
               <Block
                 color={C.resource} label="id"
-                value={objectId ? objectId.slice(0, 24) + (objectId.length > 24 ? "…" : "") : "type…"}
+                value={objectId || "type…"}
                 onClick={() => setEditing("id")}
                 onRemove={() => { setObjectId(""); if (editing === "id") setEditing(null); }}
               />
@@ -1246,12 +1497,12 @@ function GraphBlocks() {
 
           {/* add params */}
           {!objectId && (
-            <div className="flex flex-wrap gap-2 mt-2 pt-3" style={{ borderTop: `1px dashed ${C.line}` }}>
+            <div className="flex flex-wrap gap-1.5 mt-3 pt-3" style={{ borderTop: `1px solid ${C.line}` }}>
               {editing !== "id" && !res.singleton && (
                 <button
                   onClick={() => setEditing("id")}
-                  className="px-3 py-1.5 rounded-md text-sm font-semibold transition-transform"
-                  style={{ background: "transparent", color: C.resource, border: `1px dashed ${C.resource}66`, fontFamily: MONO }}
+                  className="transition-colors"
+                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, background: "transparent", color: C.resource, border: `1px solid ${hexA(C.resource, 0.35)}`, fontFamily: MONO }}
                   title="Fetch one object by ID"
                 >
                   + /{"{id}"}
@@ -1261,8 +1512,8 @@ function GraphBlocks() {
                 <button
                   key={t.id}
                   onClick={() => addParam(t.id)}
-                  className="px-3 py-1.5 rounded-md text-sm font-semibold transition-transform"
-                  style={{ background: "transparent", color: C.param, border: `1px dashed ${C.param}66`, fontFamily: MONO }}
+                  className="transition-colors"
+                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, background: "transparent", color: C.param, border: `1px solid ${hexA(C.param, 0.35)}`, fontFamily: MONO }}
                   title={t.hint}
                 >
                   + {t.label}
@@ -1273,32 +1524,51 @@ function GraphBlocks() {
 
           {/* hints */}
           {betaWarn && (
-            <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ background: "#F8717115", color: C.danger }}>
+            <p className="mt-3" style={callout(C.danger)}>
               {res.label} only exists in <b>beta</b> — switch the version block or this will 404.
             </p>
           )}
           {consistencyNeeded && (
-            <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ background: "#F472B615", color: C.header }}>
+            <p className="mt-3" style={callout(C.header)}>
               Advanced filter on a directory resource: <span style={{ fontFamily: MONO }}>ConsistencyLevel: eventual</span> + <span style={{ fontFamily: MONO }}>$count=true</span> {autoConsistency ? "added automatically." : "required — "}
               {!autoConsistency && <button className="underline font-semibold" onClick={() => setAutoConsistency(true)}>re-enable</button>}
             </p>
           )}
           {pathMeta && !pathMeta.includes(METH_LETTER[method]) && (
-            <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ background: "#F8717115", color: C.danger }}>
+            <p className="mt-3" style={callout(C.danger)}>
               This path only supports: <b>{pathMeta.split("").map((l) => METH_NAME[l]).join(", ")}</b> — switch the method block.
             </p>
           )}
           {resourceId === "custom" && res.path.includes("{") && (
-            <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ background: "#F0A04B15", color: C.method }}>
+            <p className="mt-3" style={callout(C.method)}>
               Replace the <span style={{ fontFamily: MONO }}>{"{placeholders}"}</span> in the path with real IDs before running.
             </p>
+          )}
+          {objectId && EXPANDS[res.id] && EXPANDS[res.id].length > 0 && (
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${C.line}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.dim, marginBottom: 7 }}>
+                Navigate from this object
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {EXPANDS[res.id].map((rel) => (
+                  <button
+                    key={rel}
+                    onClick={() => navigateRelationship(rel)}
+                    style={{ ...ghostBtn(C.resource), fontFamily: MONO }}
+                    title={`GET ${res.path}/{id}/${rel}`}
+                  >
+                    {rel} →
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {learn && GOTCHAS[res.id] && <Tip>{GOTCHAS[res.id]}</Tip>}
         </Section>
 
         {/* block editors */}
         {method !== "GET" && (
-          <p className="text-xs px-3 py-2 rounded-lg" style={{ background: "#F8717115", color: C.danger }}>
+          <p style={callout(C.danger)}>
             {method} sends real changes to your tenant when you hit Run.
           </p>
         )}
@@ -1312,98 +1582,63 @@ function GraphBlocks() {
         >
           {account ? (
             <>
-              <div className="flex items-center mb-2 px-3 py-2 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="flex items-center mb-2" style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 7, padding: "8px 11px" }}>
                 <span className="text-sm" style={{ fontFamily: MONO, color: C.ok }}>● {account.username}</span>
               </div>
-              <div className="px-3 py-2 rounded-lg mb-1" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                <div className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: C.dim, fontSize: 10 }}>This query needs</div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ background: consented.includes(queryScope) ? C.ok : C.method }} />
-                  <span className="text-sm font-semibold" style={{ fontFamily: MONO, color: C.text }}>{queryScope}</span>
-                  <span className="text-xs" style={{ color: consented.includes(queryScope) ? C.ok : C.dim }}>
-                    {consented.includes(queryScope) ? "consented" : "you'll be asked to consent on Run"}
-                  </span>
-                </div>
+              <div className="mb-1 flex items-center gap-2 flex-wrap" style={{ fontSize: 12 }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: consented.includes(queryScope) ? C.ok : (method === "GET" ? C.method : C.danger) }} />
+                <span style={{ color: C.dim }}>needs</span>
+                <span style={{ fontFamily: MONO, fontWeight: 600, color: method === "GET" ? C.text : C.danger }}>{queryScope}</span>
+                {method !== "GET" && <span style={{ fontSize: 10, fontWeight: 700, color: C.danger, border: `1px solid ${hexA(C.danger,0.4)}`, borderRadius: 4, padding: "1px 5px" }}>WRITE</span>}
+                <span style={{ color: consented.includes(queryScope) ? C.ok : C.dim }}>
+                  {consented.includes(queryScope) ? "· consented" : "· consent on Run"}
+                </span>
               </div>
-              {learn && <Tip>Least-privilege in action: signing in granted nothing but your identity. Each query asks only for the one scope it needs, the first time you run it — exactly how Graph Explorer does incremental consent. Admin-gated scopes (most DeviceManagement/Directory) will need a global admin to approve.</Tip>}
             </>
           ) : (
             <>
                 {!preconfigured && (
-                  <div className="mb-3 px-3 py-2.5 rounded-lg text-xs leading-relaxed" style={{ background: "#F0A04B12", color: C.method, border: `1px solid ${C.method}44` }}>
-                    <b>One-time setup needed:</b> run <span style={{ fontFamily: MONO }}>Setup-GraphBuilder.ps1</span> as an admin (creates the app registration and writes its client ID into this file), then refresh.
+                  <div className="mb-3" style={callout(C.method)}>
+                    <b>One-time setup needed:</b> run <span style={{ fontFamily: MONO }}>Setup-GraphBuilder.ps1</span> as an admin, then refresh.
                   </div>
                 )}
-                <button
-                  onClick={signIn}
-                  className="w-full py-2 rounded-lg font-bold text-sm transition-transform"
-                  style={{ background: C.version, color: C.ink }}
-                >
+                <button onClick={signIn} style={{ ...primaryBtn("#2F2F2F"), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
+                  <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden="true">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                  </svg>
                   Sign in with Microsoft
                 </button>
                 <p className="text-xs mt-2" style={{ color: C.dim }}>
-                  Sign-in grants only your identity. Each query then asks for just the permission it needs, when you run it.
+                  Grants only your identity. Each query then requests just the permission it needs on Run — read-only for GET, read-write for POST/PATCH/DELETE.
                 </p>
                 <button
                   onClick={() => {
                     if (!clientId.trim()) { setError("No client ID configured yet — see the setup note above."); return; }
                     window.open(adminConsentUrl(), "_blank");
                   }}
-                  className="w-full py-2 rounded-xl font-semibold text-sm mt-2 transition-transform"
-                  style={{ background: "transparent", color: C.header, border: `1px solid ${C.header}55` }}
+                  className="text-xs underline mt-2"
+                  style={{ color: C.dim, background: "none", border: "none", padding: 0, cursor: "pointer" }}
                 >
-                  {selectedScopes.length
-                    ? `Admin: pre-consent ${selectedScopes.length} selected scope${selectedScopes.length > 1 ? "s" : ""} org-wide`
-                    : "Admin: pre-consent all read-only scopes org-wide"}
+                  Admin: pre-consent all read-only scopes org-wide
                 </button>
-                <div className="mt-3">
-                  <div className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: C.dim, fontSize: 10 }}>
-                    Or pick specific scopes {selectedScopes.length > 0 && `(${selectedScopes.length})`}
-                  </div>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v && !selectedScopes.includes(v)) setSelectedScopes([...selectedScopes, v]);
-                    }}
-                    className="w-full px-3 py-2 rounded-lg text-sm"
-                    style={{ background: C.glass, color: C.text, border: `1px solid ${C.glassBorder}`, fontFamily: MONO }}
-                  >
-                    <option value="">add a scope…</option>
-                    {READ_SCOPES.filter((s) => !selectedScopes.includes(s)).map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                  {selectedScopes.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {selectedScopes.map((s) => (
-                        <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs" style={{ background: hexA(C.resource, 0.18), color: C.resource, border: `1px solid ${hexA(C.resource, 0.5)}`, fontFamily: MONO }}>
-                          {s}
-                          <button onClick={() => setSelectedScopes(selectedScopes.filter((x) => x !== s))} style={{ color: C.resource, fontWeight: 700 }}>×</button>
-                        </span>
-                      ))}
-                      <button onClick={() => setSelectedScopes([])} className="text-xs underline" style={{ color: C.dim }}>clear</button>
-                    </div>
-                  )}
-                  <p className="text-xs mt-1.5" style={{ color: C.dim }}>
-                    Leave empty to let each query request its own scope on Run. Pick scopes here only if you want to pre-consent a known set.
-                  </p>
-                </div>
             </>
           )}
           <button
             onClick={() => run()}
             disabled={running || betaWarn || !account}
-            className="w-full py-2 rounded-lg font-bold text-sm mt-3 transition-transform"
-            style={{ background: method === "GET" ? C.ok : C.danger, color: C.ink, opacity: running || betaWarn || !account ? 0.5 : 1 }}
+            className="mt-3"
+            style={primaryBtn(method === "GET" ? C.ok : C.danger, { opacity: running || betaWarn || !account ? 0.45 : 1 })}
           >
             {running ? "Running…" : !account ? "Sign in to run" : `Run ${method}`}
           </button>
           {error && (
-            <p className="text-sm mt-3 px-3 py-2 rounded-lg" style={{ background: "#F8717115", color: C.danger }}>{error}</p>
+            <p className="mt-3" style={callout(C.danger)}>{error}</p>
           )}
           {neededScopes.length > 0 && account && (
-            <div className="mt-2 px-3 py-2.5 rounded-lg" style={{ background: "#F0A04B12", border: `1px solid ${C.method}44` }}>
+            <div className="mt-2" style={callout(C.method)}>
               <p className="text-xs mb-2" style={{ color: C.method }}>
                 Graph wants a different permission than was guessed. Consent to the correct one and re-run:
               </p>
@@ -1412,8 +1647,7 @@ function GraphBlocks() {
                   <button
                     key={s}
                     onClick={() => run(undefined, s)}
-                    className="w-full py-1.5 rounded-md text-xs font-bold transition-transform"
-                    style={{ background: C.method, color: C.ink, fontFamily: MONO }}
+                    style={{ ...primaryBtn(C.method), fontSize: 12, padding: "7px 12px", fontFamily: MONO }}
                   >
                     Consent &amp; run with {s}
                   </button>
@@ -1433,8 +1667,8 @@ function GraphBlocks() {
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={5}
-              className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: C.panel, color: C.text, border: `1px solid ${C.line}`, fontFamily: MONO }}
+              className="w-full"
+              style={field()}
             />
           </Section>
         )}
@@ -1465,7 +1699,7 @@ function GraphBlocks() {
         </div>{/* end left column */}
 
         {/* right column: results */}
-        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+        <div className="space-y-5 lg:sticky lg:top-4 lg:self-start">
         {result ? (
           <Section
             title={`Results${result["@odata.count"] != null ? ` · ${result["@odata.count"]} total` : rows.length ? ` · ${rows.length} shown` : ""}`}
@@ -1475,12 +1709,11 @@ function GraphBlocks() {
                 <button
                   onClick={() => downloadCSV(rows, `graph-${res.path.split("/").pop()}`)}
                   disabled={!rows.length}
-                  className="px-2.5 py-1 rounded text-xs font-semibold"
-                  style={{ background: C.panel, color: rows.length ? C.ok : C.dim, border: `1px solid ${C.line}`, opacity: rows.length ? 1 : 0.5 }}
+                  style={rows.length ? ghostBtn(C.ok) : { ...ghostBtn(), opacity: 0.5 }}
                 >
                   Export CSV
                 </button>
-                <button onClick={() => setShowRaw(!showRaw)} className="px-2.5 py-1 rounded text-xs font-semibold" style={{ background: C.panel, color: C.dim, border: `1px solid ${C.line}` }}>
+                <button onClick={() => setShowRaw(!showRaw)} style={ghostBtn()}>
                   {showRaw ? "Table" : "Raw JSON"}
                 </button>
               </div>
@@ -1501,9 +1734,9 @@ function GraphBlocks() {
                 <table className="w-full text-xs" style={{ fontFamily: MONO }}>
                   <thead>
                     <tr>
-                      <th className="sticky top-0" style={{ background: C.surface, width: 24 }} />
+                      <th className="sticky top-0" style={{ background: C.surface, width: 24, borderBottom: `1px solid ${C.line}` }} />
                       {cols.map((c) => (
-                        <th key={c} className="text-left px-2 py-1.5 font-bold whitespace-nowrap sticky top-0" style={{ color: C.param, background: C.surface }}>{c}</th>
+                        <th key={c} className="text-left px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.dim, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>{c}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1549,7 +1782,7 @@ function GraphBlocks() {
                 <button
                   onClick={() => run(nextLink)}
                   disabled={running}
-                  className="mt-3 px-4 py-2 rounded-lg text-sm font-bold"
+                  className=""
                   style={{ background: C.panel, color: C.ok, border: `1px solid ${C.line}` }}
                 >
                   {running ? "Loading…" : "Load next page →"}
