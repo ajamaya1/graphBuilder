@@ -472,6 +472,33 @@ function needsConsistency(params, res) {
 }
 
 // ── tiny UI atoms ────────────────────────────────────────────
+function Tabs({ tabs, active, onChange }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap" style={{ borderBottom: `1px solid ${C.line}`, marginBottom: 14 }}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          style={{
+            padding: "8px 13px",
+            fontSize: 12.5,
+            fontWeight: active === t.id ? 700 : 500,
+            color: active === t.id ? C.text : C.dim,
+            background: "none",
+            border: "none",
+            borderBottom: `2px solid ${active === t.id ? C.resource : "transparent"}`,
+            marginBottom: -1,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {t.label}{t.badge != null && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: C.resource, background: hexA(C.resource, 0.14), borderRadius: 4, padding: "1px 6px" }}>{t.badge}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Chip({ active, color, children, onClick, title }) {
   return (
     <button
@@ -626,15 +653,66 @@ function toCSV(rows) {
 
 function downloadCSV(rows, name) {
   const csv = "\uFEFF" + toCSV(rows); // BOM so Excel reads UTF-8 cleanly
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  triggerDownload(csv, (name || "graph-export") + ".csv", "text/csv;charset=utf-8;");
+}
+
+function triggerDownload(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = (name || "graph-export") + ".csv";
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportRows(format, rows, name) {
+  const flat = rows.map((r) => flattenRow(r));
+  const cols = [];
+  for (const r of flat) for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
+  const fname = name || "graph-export";
+  const cell = (v) => (v === null || v === undefined ? "" : String(v));
+  const escHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  if (format === "csv") { downloadCSV(rows, fname); return; }
+
+  if (format === "xlsx") {
+    // Minimal SpreadsheetML 2003 — opens in Excel, no library needed
+    const xmlCell = (v) => `<Cell><Data ss:Type="String">${escHtml(cell(v))}</Data></Cell>`;
+    const header = `<Row>${cols.map((c) => `<Cell><Data ss:Type="String">${escHtml(c)}</Data></Cell>`).join("")}</Row>`;
+    const body = flat.map((r) => `<Row>${cols.map((c) => xmlCell(r[c])).join("")}</Row>`).join("");
+    const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Graph"><Table>${header}${body}</Table></Worksheet></Workbook>`;
+    triggerDownload(xml, fname + ".xls", "application/vnd.ms-excel");
+    return;
+  }
+
+  const tableHtml = `<table><thead><tr>${cols.map((c) => `<th>${escHtml(c)}</th>`).join("")}</tr></thead><tbody>${
+    flat.map((r) => `<tr>${cols.map((c) => `<td>${escHtml(cell(r[c]))}</td>`).join("")}</tr>`).join("")
+  }</tbody></table>`;
+  const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(fname)}</title>
+<style>body{font-family:system-ui,Segoe UI,sans-serif;margin:24px;color:#1a1a1a}h1{font-size:16px}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #ccc;padding:5px 8px;text-align:left}
+th{background:#f0f0f0;font-weight:600}tr:nth-child(even){background:#fafafa}
+.meta{color:#666;font-size:11px;margin-bottom:16px}</style></head>
+<body><h1>${escHtml(fname)}</h1><div class="meta">${flat.length} rows · exported from Graph Builder · ${new Date().toLocaleString()}</div>${tableHtml}</body></html>`;
+
+  if (format === "html") { triggerDownload(doc, fname + ".html", "text/html;charset=utf-8;"); return; }
+
+  if (format === "pdf") {
+    // Open print-ready HTML; user picks "Save as PDF" in the print dialog
+    const w = window.open("", "_blank");
+    if (!w) { alert("Allow pop-ups to export PDF, or use HTML export."); return; }
+    w.document.write(doc);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+    return;
+  }
 }
 
 function downloadPS1(text, name, title) {
@@ -745,8 +823,16 @@ function GraphBlocks() {
   const [editing, setEditing] = useState(null); // 'method'|'version'|'resource'|param index
   const [autoConsistency, setAutoConsistency] = useState(true);
   const [body, setBody] = useState("{\n  \n}");
+  const [customHeaders, setCustomHeaders] = useState([]); // [{key,value}]
+  const [lastToken, setLastToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
+  const [respHeaders, setRespHeaders] = useState(null);
+  const [respStatus, setRespStatus] = useState(null);
+  const [reqTab, setReqTab] = useState("headers");
+  const [resTab, setResTab] = useState("preview");
+  const [history, setHistory] = useState([]);
   const [discoveredProps, setDiscoveredProps] = useState([]);
   const [error, setError] = useState(null);
   const [neededScopes, setNeededScopes] = useState([]);
@@ -765,6 +851,7 @@ function GraphBlocks() {
   const [consented, setConsented] = useState([]);
   const [customPath, setCustomPath] = useState("me/drive/root/children");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [histOpen, setHistOpen] = useState(false);
   const [signInModal, setSignInModal] = useState(false);
 
   // relationship navigation: jump to {resource}/{id}/{relationship} as a fresh query
@@ -1008,14 +1095,22 @@ function GraphBlocks() {
     try {
       const bearer = await getBearer(scopeOverride || queryScope);
       if (!bearer) throw new Error("Couldn't acquire a token — try signing in again.");
+      setLastToken(bearer);
       const headers = { Authorization: `Bearer ${bearer}` };
       if (consistencyOn) headers["ConsistencyLevel"] = "eventual";
+      // user-supplied custom headers (override defaults if same key)
+      customHeaders.forEach((h) => { if (h.key.trim()) headers[h.key.trim()] = h.value; });
       const opts = { method, headers };
       if ((method === "POST" || method === "PATCH") && !uri) {
         headers["Content-Type"] = "application/json";
         opts.body = body;
       }
       const r = await fetch(uri || url, opts);
+      // capture response headers + status (Graph Explorer style)
+      const rh = {};
+      r.headers.forEach((v, k) => { rh[k] = v; });
+      setRespHeaders(rh);
+      setRespStatus(`${r.status} ${r.statusText}`);
       const text = await r.text();
       let data = null;
       try { data = text ? JSON.parse(text) : { status: r.status }; } catch { data = { raw: text }; }
@@ -1043,6 +1138,10 @@ function GraphBlocks() {
         if (keys.length) setDiscoveredProps(keys);
       }
       setNextLink(data?.["@odata.nextLink"] || null);
+      if (!uri) {
+        // log fresh runs (not pagination) to history
+        setHistory((prev) => [{ method, url, version, at: Date.now(), status: `${r.status}` }, ...prev.filter((h) => !(h.url === url && h.method === method))].slice(0, 30));
+      }
     } catch (e) {
       setError(e.message === "Failed to fetch" ? "Request blocked or network error — your session may have expired (try signing out and back in), or the endpoint rejected the call." : e.message);
     } finally {
@@ -1355,6 +1454,13 @@ function GraphBlocks() {
               Learn mode {learn ? "on" : "off"}
             </button>
             <button
+              onClick={() => setHistOpen(!histOpen)}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}` }}
+            >
+              History{history.length ? ` (${history.length})` : ""}
+            </button>
+            <button
               onClick={() => setHelpOpen(!helpOpen)}
               className="transition-colors"
               style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}` }}
@@ -1381,6 +1487,35 @@ function GraphBlocks() {
           </div>
         </div>
 
+        {histOpen && (
+          <div className="mb-5" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+            <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <div className="flex items-center gap-2.5">
+                <span style={{ width: 3, height: 13, borderRadius: 2, background: C.resource, display: "inline-block" }} />
+                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>Query history</h2>
+              </div>
+              {history.length > 0 && <button onClick={() => setHistory([])} style={ghostBtn()}>Clear</button>}
+            </div>
+            <div className="px-3 py-2" style={{ maxHeight: 260, overflowY: "auto" }}>
+              {history.length === 0 ? (
+                <p className="text-xs px-1 py-3" style={{ color: C.dim }}>Queries you run will appear here — click one to load it back into the builder.</p>
+              ) : history.map((h) => (
+                <button
+                  key={h.at}
+                  onClick={() => { setVersion(h.version); setResourceId("custom"); setCustomPath(h.url.replace(/^https:\/\/graph\.microsoft\.com\/(v1\.0|beta)\//, "")); setMethod(h.method); setObjectId(""); setParams([]); setEditing(null); setHistOpen(false); }}
+                  className="w-full text-left px-2 py-1.5 rounded flex items-center gap-2"
+                  onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 700, color: h.method === "GET" ? C.method : C.danger, flexShrink: 0, width: 42 }}>{h.method}</span>
+                  <span style={{ fontSize: 11.5, fontFamily: MONO, color: C.text, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.url.replace("https://graph.microsoft.com/", "")}</span>
+                  <span style={{ fontSize: 10, color: C.dim, flexShrink: 0 }}>{new Date(h.at).toLocaleTimeString()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {helpOpen && (
           <div className="mb-5" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10 }}>
             <div className="flex items-center justify-between px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -1399,103 +1534,10 @@ function GraphBlocks() {
 
         <div className="space-y-5 pb-16" style={{ maxWidth: 1100, margin: "0 auto" }}>
 
-        {/* permissions & status */}
-        <Section title="Permissions & status" accent={C.ok}>
-          {account ? (
-              <div className="flex items-center gap-2 flex-wrap" style={{ fontSize: 12 }}>
-                <span className="w-2 h-2 rounded-full" style={{ background: consented.includes(queryScope) ? C.ok : (method === "GET" ? C.method : C.danger) }} />
-                <span style={{ color: C.dim }}>this query needs</span>
-                <span style={{ fontFamily: MONO, fontWeight: 600, color: method === "GET" ? C.text : C.danger }}>{queryScope}</span>
-                {method !== "GET" && <span style={{ fontSize: 10, fontWeight: 700, color: C.danger, border: `1px solid ${hexA(C.danger,0.4)}`, borderRadius: 4, padding: "1px 5px" }}>WRITE</span>}
-                <span style={{ color: consented.includes(queryScope) ? C.ok : C.dim }}>
-                  {consented.includes(queryScope) ? "· consented" : "· you'll consent on Run"}
-                </span>
-              </div>
-          ) : (
-            <>
-                {!preconfigured && (
-                  <div className="mb-3" style={callout(C.method)}>
-                    <b>One-time setup needed:</b> run <span style={{ fontFamily: MONO }}>Setup-GraphBuilder.ps1</span> as an admin, then refresh.
-                  </div>
-                )}
-                <p className="text-xs" style={{ color: C.dim }}>
-                  Sign in (top right) to run queries. Sign-in grants only your identity — each query then requests just the permission it needs on Run: read-only for GET, read-write for POST/PATCH/DELETE.
-                </p>
-                <button
-                  onClick={() => {
-                    if (!clientId.trim()) { setError("No client ID configured yet — see the setup note above."); return; }
-                    window.open(adminConsentUrl(), "_blank");
-                  }}
-                  className="text-xs underline mt-2"
-                  style={{ color: C.dim, background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                >
-                  Admin: approve the {ADMIN_CONSENT_SCOPES.length} basic read scopes org-wide
-                </button>
-            </>
-          )}
-          {error && (
-            <p className="mt-3" style={callout(C.danger)}>{error}</p>
-          )}
-          {neededScopes.length > 0 && account && (
-            <div className="mt-2" style={callout(C.method)}>
-              <p className="text-xs mb-2" style={{ color: C.method }}>
-                Graph wants a different permission than was guessed. Consent to the correct one and re-run:
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {neededScopes.slice(0, 4).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => run(undefined, s)}
-                    style={{ ...primaryBtn(C.method), fontSize: 12, padding: "7px 12px", fontFamily: MONO }}
-                  >
-                    Consent &amp; run with {s}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs mt-2" style={{ color: C.dim }}>
-                Admin-gated scopes need a global admin to approve the prompt.
-              </p>
-            </div>
-          )}
-        </Section>
-
-        {/* body editor for write methods */}
-        {(method === "POST" || method === "PATCH") && (
-          <Section title="Request body (JSON)" accent={C.danger}>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={5}
-              className="w-full"
-              style={field()}
-            />
-          </Section>
-        )}
-
-        {/* output */}
-
         {/* canvas */}
         <Section
           title="Your query"
           accent={C.resource}
-          right={
-            <button
-              onClick={() => run()}
-              disabled={running || betaWarn || !account}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "5px 14px", borderRadius: 7, fontSize: 12.5, fontWeight: 700,
-                background: !account ? C.panel : (method === "GET" ? C.ok : C.danger),
-                color: !account ? C.dim : C.ink,
-                border: !account ? `1px solid ${C.line}` : "none",
-                cursor: running || betaWarn || !account ? "default" : "pointer",
-                opacity: running || betaWarn ? 0.5 : 1,
-              }}
-              title={!account ? "Sign in (top right) to run" : `Run ${method}`}
-            >
-              {running ? "Running…" : !account ? "Sign in to run" : `▶ Run ${method}`}
-            </button>
-          }
         >
           <div className="flex flex-wrap items-center pb-2 pt-1" style={{ rowGap: 10 }}>
             <Block
@@ -1630,126 +1672,238 @@ function GraphBlocks() {
         {EditorPanel()}
 
 
-        {/* results */}
-        {result ? (
-          <Section
-            title={`Results${result["@odata.count"] != null ? ` · ${result["@odata.count"]} total` : rows.length ? ` · ${rows.length} shown` : ""}`}
-            accent={C.ok}
-            right={
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => downloadCSV(rows, `graph-${res.path.split("/").pop()}`)}
-                  disabled={!rows.length}
-                  style={rows.length ? ghostBtn(C.ok) : { ...ghostBtn(), opacity: 0.5 }}
-                >
-                  Export CSV
-                </button>
-                <button onClick={() => setShowRaw(!showRaw)} style={ghostBtn()}>
-                  {showRaw ? "Table" : "Raw JSON"}
-                </button>
+        {/* request URL bar */}
+        <div className="flex items-center gap-2" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 9, padding: "8px 12px" }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0 }}>{method}</span>
+          <code className="flex-1 text-xs break-all" style={{ fontFamily: MONO, color: C.resource, minWidth: 0 }}>{url}</code>
+          <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
+            <CopyBtn text={url} />
+            <button
+              onClick={() => run()}
+              disabled={running || betaWarn || !account}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 16px", borderRadius: 7, fontSize: 12.5, fontWeight: 700,
+                background: !account ? C.panel : (method === "GET" ? C.ok : C.danger),
+                color: !account ? C.dim : C.ink,
+                border: !account ? `1px solid ${C.line}` : "none",
+                cursor: running || betaWarn || !account ? "default" : "pointer",
+                opacity: running || betaWarn ? 0.5 : 1,
+              }}
+              title={!account ? "Sign in (top right) to run" : `Run ${method}`}
+            >
+              {running ? "Running…" : !account ? "Sign in to run" : `▶ Run`}
+            </button>
+          </div>
+        </div>
+
+        {/* REQUEST tabs */}
+        <Section title="Request" accent={C.method}>
+          <Tabs
+            active={reqTab}
+            onChange={setReqTab}
+            tabs={[
+              ...((method === "POST" || method === "PATCH") ? [{ id: "body", label: "Body" }] : []),
+              { id: "headers", label: "Headers", badge: customHeaders.length || null },
+              { id: "permissions", label: "Permissions" },
+              { id: "token", label: "Access token" },
+            ]}
+          />
+
+          {reqTab === "body" && (method === "POST" || method === "PATCH") && (
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} className="w-full" style={field()} />
+          )}
+
+          {reqTab === "headers" && (
+            <>
+              <div className="text-xs mb-2 flex items-center justify-between">
+                <span style={{ color: C.dim }}>
+                  <span style={{ fontFamily: MONO }}>Authorization: Bearer …</span> added automatically.{consistencyOn && <> <span style={{ fontFamily: MONO }}>ConsistencyLevel: eventual</span> set for this query.</>}
+                </span>
+                <button onClick={() => setCustomHeaders([...customHeaders, { key: "", value: "" }])} style={ghostBtn(C.method)}>+ Add header</button>
               </div>
-            }
-          >
-            {showRaw || !cols.length ? (
-              <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text, maxHeight: 400, overflowY: "auto" }}>
-                {JSON.stringify(result, null, 2)}
-              </pre>
-            ) : (
-              <>
-              {rows.length > 1 && rows.some((r) => r.id) && (
-                <p className="text-xs mb-2" style={{ color: C.dim }}>
-                  Click any row to load just that item by its id.
-                </p>
+              {customHeaders.length === 0 ? (
+                <p className="text-xs" style={{ color: C.dim }}>No custom headers. Add one for things like <span style={{ fontFamily: MONO }}>Prefer</span> or <span style={{ fontFamily: MONO }}>ConsistencyLevel</span>.</p>
+              ) : (
+                <div className="space-y-2">
+                  {customHeaders.map((h, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={h.key} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => j === i ? { ...x, key: e.target.value } : x))} placeholder="Header name" style={{ ...field(), flex: "0 0 38%" }} />
+                      <input value={h.value} onChange={(e) => setCustomHeaders(customHeaders.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} placeholder="value" style={{ ...field(), flex: 1 }} />
+                      <button onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))} style={{ color: C.dim, fontSize: 15, flexShrink: 0 }} title="Remove">×</button>
+                    </div>
+                  ))}
+                </div>
               )}
-              <div className="overflow-x-auto" style={{ maxHeight: 420, overflowY: "auto" }}>
-                <table className="w-full text-xs" style={{ fontFamily: MONO }}>
-                  <thead>
-                    <tr>
-                      <th className="sticky top-0" style={{ background: C.surface, width: 24, borderBottom: `1px solid ${C.line}` }} />
-                      {cols.map((c) => (
-                        <th key={c} className="text-left px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.dim, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>{c}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => {
-                      const rowId = r.id || r[Object.keys(r).find((k) => /Id$/.test(k) && typeof r[k] === "string")];
-                      const drill = () => {
-                        if (!rowId) return;
-                        setResourceId(resourceId);   // keep current resource
-                        setObjectId(String(rowId));
-                        setParams([]);
-                        setEditing(null);
-                        setTimeout(() => run(), 0);  // re-run as single-object GET
-                      };
-                      return (
-                        <tr
-                          key={i}
-                          onClick={drill}
-                          style={{ borderTop: `1px solid ${C.line}`, cursor: rowId ? "pointer" : "default" }}
-                          title={rowId ? `Load this item (id: ${rowId})` : "No id on this row to drill into"}
-                          onMouseEnter={(e) => { if (rowId) e.currentTarget.style.background = C.panel; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                        >
-                          <td className="px-1 text-center" style={{ color: rowId ? C.resource : C.line }}>{rowId ? "›" : ""}</td>
-                          {cols.map((c) => {
-                            const v = c.includes("/") ? c.split("/").reduce((a, k) => a?.[k], r) : r[c];
+            </>
+          )}
+
+          {reqTab === "permissions" && (
+            <>
+              {account ? (
+                <div className="flex items-center gap-2 flex-wrap" style={{ fontSize: 12 }}>
+                  <span className="w-2 h-2 rounded-full" style={{ background: consented.includes(queryScope) ? C.ok : (method === "GET" ? C.method : C.danger) }} />
+                  <span style={{ color: C.dim }}>this query needs</span>
+                  <span style={{ fontFamily: MONO, fontWeight: 600, color: method === "GET" ? C.text : C.danger }}>{queryScope}</span>
+                  {method !== "GET" && <span style={{ fontSize: 10, fontWeight: 700, color: C.danger, border: `1px solid ${hexA(C.danger,0.4)}`, borderRadius: 4, padding: "1px 5px" }}>WRITE</span>}
+                  <span style={{ color: consented.includes(queryScope) ? C.ok : C.dim }}>{consented.includes(queryScope) ? "· consented" : "· you'll consent on Run"}</span>
+                </div>
+              ) : (
+                <>
+                  {!preconfigured && (
+                    <div className="mb-3" style={callout(C.method)}><b>One-time setup needed:</b> run <span style={{ fontFamily: MONO }}>Setup-GraphBuilder.ps1</span> as an admin, then refresh.</div>
+                  )}
+                  <p className="text-xs" style={{ color: C.dim }}>Sign in (top right) to run queries. Each query requests just the permission it needs on Run: read-only for GET, read-write for writes.</p>
+                  <button onClick={() => { if (!clientId.trim()) { setError("No client ID configured yet."); return; } window.open(adminConsentUrl(), "_blank"); }} className="text-xs underline mt-2" style={{ color: C.dim, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                    Admin: approve the {ADMIN_CONSENT_SCOPES.length} basic read scopes org-wide
+                  </button>
+                </>
+              )}
+              {neededScopes.length > 0 && account && (
+                <div className="mt-3" style={callout(C.method)}>
+                  <p className="text-xs mb-2" style={{ color: C.method }}>Graph wants a different permission than was guessed. Consent and re-run:</p>
+                  <div className="flex flex-col gap-1.5">
+                    {neededScopes.slice(0, 4).map((s) => (
+                      <button key={s} onClick={() => run(undefined, s)} style={{ ...primaryBtn(C.method), fontSize: 12, padding: "7px 12px", fontFamily: MONO }}>Consent &amp; run with {s}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {reqTab === "token" && (
+            account ? (
+              lastToken ? (
+                <>
+                  <div className="flex justify-end gap-1.5 mb-2">
+                    <button onClick={() => setShowToken(!showToken)} style={ghostBtn()}>{showToken ? "Hide" : "Show"}</button>
+                    <CopyBtn text={lastToken} />
+                  </div>
+                  {showToken ? (
+                    <code className="block text-xs break-all leading-relaxed" style={{ fontFamily: MONO, color: C.dim, maxHeight: 140, overflowY: "auto" }}>{lastToken}</code>
+                  ) : (
+                    <p className="text-xs" style={{ color: C.dim }}>Token from your last run. <b>Show</b> to reveal or <b>Copy</b> to use in Postman, curl, or Graph Explorer. Expires in ~1 hour.</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs" style={{ color: C.dim }}>Run a query and the bearer token used will appear here to copy.</p>
+              )
+            ) : (
+              <p className="text-xs" style={{ color: C.dim }}>Sign in first to acquire a token.</p>
+            )
+          )}
+
+          {error && <p className="mt-3" style={callout(C.danger)}>{error}</p>}
+        </Section>
+
+        {/* RESPONSE tabs */}
+        <Section title={`Response${respStatus ? ` · ${respStatus}` : ""}`} accent={C.ok}>
+          <Tabs
+            active={resTab}
+            onChange={setResTab}
+            tabs={[
+              { id: "preview", label: "Preview" },
+              { id: "headers", label: "Headers", badge: respHeaders ? Object.keys(respHeaders).length : null },
+              { id: "snippets", label: "Code & snippets" },
+            ]}
+          />
+
+          {resTab === "preview" && (
+            result ? (
+              <>
+                <div className="flex justify-end items-center gap-1.5 mb-2 flex-wrap">
+                  <span style={{ fontSize: 11, color: C.dim, marginRight: 2 }}>Export:</span>
+                  {["csv", "xlsx", "pdf", "html"].map((fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => exportRows(fmt, rows, `graph-${res.path.split("/").pop()}`)}
+                      disabled={!rows.length}
+                      style={rows.length ? ghostBtn(C.ok) : { ...ghostBtn(), opacity: 0.5 }}
+                      title={`Export ${rows.length} rows as ${fmt.toUpperCase()}`}
+                    >
+                      {fmt.toUpperCase()}
+                    </button>
+                  ))}
+                  <button onClick={() => setShowRaw(!showRaw)} style={ghostBtn()}>{showRaw ? "Table" : "Raw JSON"}</button>
+                </div>
+                {showRaw || !cols.length ? (
+                  <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text, maxHeight: 420, overflowY: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
+                ) : (
+                  <>
+                    {rows.length > 1 && rows.some((r) => r.id) && (<p className="text-xs mb-2" style={{ color: C.dim }}>Click any row to load just that item by its id.</p>)}
+                    <div className="overflow-x-auto" style={{ maxHeight: 420, overflowY: "auto" }}>
+                      <table className="w-full text-xs" style={{ fontFamily: MONO }}>
+                        <thead><tr>
+                          <th className="sticky top-0" style={{ background: C.surface, width: 24, borderBottom: `1px solid ${C.line}` }} />
+                          {cols.map((c) => (<th key={c} className="text-left px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.dim, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>{c}</th>))}
+                        </tr></thead>
+                        <tbody>
+                          {rows.map((r, i) => {
+                            const rowId = r.id || r[Object.keys(r).find((k) => /Id$/.test(k) && typeof r[k] === "string")];
+                            const drill = () => { if (!rowId) return; setResourceId(resourceId); setObjectId(String(rowId)); setParams([]); setEditing(null); setTimeout(() => run(), 0); };
                             return (
-                              <td key={c} className="px-2 py-1.5 whitespace-nowrap" style={{ color: C.text }}>
-                                {v === true ? "true" : v === false ? "false" : v == null ? <span style={{ color: C.dim }}>—</span> : String(v).slice(0, 48)}
-                              </td>
+                              <tr key={i} onClick={drill} style={{ borderTop: `1px solid ${C.line}`, cursor: rowId ? "pointer" : "default" }} title={rowId ? `Load this item (id: ${rowId})` : "No id on this row"} onMouseEnter={(e) => { if (rowId) e.currentTarget.style.background = C.panel; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                                <td className="px-1 text-center" style={{ color: rowId ? C.resource : C.line }}>{rowId ? "›" : ""}</td>
+                                {cols.map((c) => { const v = c.includes("/") ? c.split("/").reduce((a, k) => a?.[k], r) : r[c]; return (<td key={c} className="px-2 py-1.5 whitespace-nowrap" style={{ color: C.text }}>{v === true ? "true" : v === false ? "false" : v == null ? <span style={{ color: C.dim }}>—</span> : String(v).slice(0, 48)}</td>); })}
+                              </tr>
                             );
                           })}
-                        </tr>
-                      );
-                    })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+                {nextLink && (<button onClick={() => run(nextLink)} disabled={running} className="mt-3" style={{ ...ghostBtn(C.ok), padding: "7px 14px" }}>{running ? "Loading…" : "Load next page →"}</button>)}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-12" style={{ color: C.dim }}>
+                <div style={{ fontSize: 32, opacity: 0.4 }}>⬡</div>
+                <p className="text-sm mt-2">Build a query above, then <b>Run</b> — results land here.</p>
+              </div>
+            )
+          )}
+
+          {resTab === "headers" && (
+            respHeaders ? (
+              <div className="overflow-x-auto" style={{ maxHeight: 360, overflowY: "auto" }}>
+                <table className="w-full text-xs" style={{ fontFamily: MONO }}>
+                  <tbody>
+                    {Object.entries(respHeaders).map(([k, v]) => (
+                      <tr key={k} style={{ borderTop: `1px solid ${C.line}` }}>
+                        <td className="px-2 py-1.5 whitespace-nowrap align-top" style={{ color: C.param, fontWeight: 600 }}>{k}</td>
+                        <td className="px-2 py-1.5 break-all" style={{ color: C.text }}>{v}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-              </>
-            )}
-            {nextLink && (
-              <>
-                <button
-                  onClick={() => run(nextLink)}
-                  disabled={running}
-                  className=""
-                  style={{ background: C.panel, color: C.ok, border: `1px solid ${C.line}` }}
-                >
-                  {running ? "Loading…" : "Load next page →"}
-                </button>
-                {learn && <Tip>{TIPS.paging}</Tip>}
-              </>
-            )}
-          </Section>
-        ) : (
-          <Section title="Results" accent={C.dim}>
-            <div className="flex flex-col items-center justify-center text-center py-12" style={{ color: C.dim }}>
-              <div style={{ fontSize: 32, opacity: 0.4 }}>⬡</div>
-              <p className="text-sm mt-2">Build a query above, then <b>Run</b> — results land here.</p>
+            ) : (
+              <p className="text-xs" style={{ color: C.dim }}>Run a query to see the response headers Graph returns.</p>
+            )
+          )}
+
+          {resTab === "snippets" && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.param }}>PowerShell</span>
+                  <div className="flex gap-1.5"><Ps1Btn text={ps} name={`graph-${res.path.split("/").pop() || "query"}`} title={`${method} ${url}`} /><CopyBtn text={ps} /></div>
+                </div>
+                <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{ps}</pre>
+              </div>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.resource }}>Graph SDK cmdlet</span>
+                  <div className="flex gap-1.5"><Ps1Btn text={SDK[res.id] ? sdkCmd : `Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version}`} name={`graph-sdk-${res.path.split("/").pop() || "query"}`} title={`Graph SDK — ${method} /${path}`} /><CopyBtn text={SDK[res.id] ? sdkCmd : `Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version}`} /></div>
+                </div>
+                {SDK[res.id] ? (
+                  <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{sdkCmd}</pre>
+                ) : (
+                  <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{`Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version} |\n    Select-Object Command, Permissions`}</pre>
+                )}
+              </div>
             </div>
-          </Section>
-        )}
-
-
-        <Section title="Request URL" accent={C.version} right={<CopyBtn text={url} />}>
-          <code className="block text-sm break-all leading-relaxed" style={{ fontFamily: MONO, color: C.resource }}>{url}</code>
-        </Section>
-
-        <Section title="PowerShell" accent={C.param} right={<div className="flex gap-1.5"><Ps1Btn text={ps} name={`graph-${res.path.split("/").pop() || "query"}`} title={`${method} ${url}`} /><CopyBtn text={ps} /></div>}>
-          <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{ps}</pre>
-        </Section>
-        <Section title="Graph SDK equivalent" accent={C.resource} right={<div className="flex gap-1.5"><Ps1Btn text={SDK[res.id] ? sdkCmd : `Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version} |\n    Select-Object Command, Permissions`} name={`graph-sdk-${res.path.split("/").pop() || "query"}`} title={`Graph SDK — ${method} /${path}`} /><CopyBtn text={SDK[res.id] ? sdkCmd : `Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version}`} /></div>}>
-          {SDK[res.id] ? (
-            <>
-              <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{sdkCmd}</pre>
-              {learn && <Tip>{TIPS.sdk}</Tip>}
-            </>
-          ) : (
-            <>
-              <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{`Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version} |\n    Select-Object Command, Permissions`}</pre>
-              {learn && <Tip>No hardcoded mapping for this endpoint — but Find-MgGraphCommand looks up the SDK cmdlet (and required permissions) for any Graph URL. It's the reverse Rosetta Stone, and worth knowing even when this tool does have the answer.</Tip>}
-            </>
           )}
         </Section>
 
