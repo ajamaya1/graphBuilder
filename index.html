@@ -1551,6 +1551,35 @@ function GraphBlocks() {
         <Section
           title="Your query"
           accent={C.resource}
+          right={
+            <div className="flex items-center gap-2">
+              <select
+                value={resourceId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setResourceId(id); setParams([]); setObjectId(""); setDiscoveredProps([]);
+                  if (id === "custom") { setEditing("custom"); }
+                  else { setEditing(null); const r = RESOURCES.find((x) => x.id === id); if (r && r.betaOnly) setVersion("beta"); }
+                }}
+                style={{ ...field(), padding: "5px 9px", fontSize: 12 }}
+                title="Quickly switch resource"
+              >
+                {getPathIndex(version) && <option value="custom">🔍 Search every Graph path…</option>}
+                {CATEGORIES.map((c) => (
+                  <optgroup key={c.name} label={c.name}>
+                    {c.ids.map((id) => { const r = RESOURCES.find((x) => x.id === id); return <option key={id} value={id}>{r.label}{r.betaOnly ? " (β)" : ""}</option>; })}
+                  </optgroup>
+                ))}
+              </select>
+              <button
+                onClick={() => { setMethod("GET"); setResourceId("managedDevices"); setObjectId(""); setParams([]); setEditing(null); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); }}
+                style={ghostBtn()}
+                title="Start a fresh query"
+              >
+                New
+              </button>
+            </div>
+          }
         >
           <div className="flex flex-wrap items-center pb-2 pt-1" style={{ rowGap: 10 }}>
             <Block
