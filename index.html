@@ -813,14 +813,50 @@ function Tip({ children }) {
   );
 }
 
+function ResourceGroup({ group, count, idx, onPick }) {
+  const [open, setOpen] = useState(false);
+  const paths = open ? idx.filter(([p]) => p.split("/")[1] === group).slice(0, 200) : [];
+  return (
+    <div style={{ borderBottom: `1px solid ${C.line}` }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full text-left px-3 py-2 flex items-center gap-2"
+        onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+      >
+        <span style={{ color: C.dim, fontSize: 11, width: 10, flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+        <span style={{ fontFamily: MONO, fontSize: 12.5, color: C.text, flex: 1 }}>{group}</span>
+        <span style={{ fontSize: 10, color: C.dim }}>{count}</span>
+      </button>
+      {open && (
+        <div style={{ background: hexA("#000000", 0.12) }}>
+          {paths.map(([p, m]) => (
+            <button
+              key={p}
+              onClick={() => onPick(p)}
+              className="w-full text-left pl-8 pr-3 py-1.5 flex items-center justify-between gap-2"
+              onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              <span className="text-xs break-all" style={{ fontFamily: MONO, color: C.dim }}>{p}</span>
+              <span className="text-xs font-bold whitespace-nowrap" style={{ fontFamily: MONO, color: C.param }}>{m}</span>
+            </button>
+          ))}
+          {paths.length === 200 && <div className="px-8 py-1.5 text-xs" style={{ color: C.dim }}>Showing first 200 — search to narrow.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── main ─────────────────────────────────────────────────────
 function GraphBlocks() {
   const [method, setMethod] = useState("GET");
   const [version, setVersion] = useState("beta");
-  const [resourceId, setResourceId] = useState("managedDevices");
+  const [resourceId, setResourceId] = useState("custom");
   const [objectId, setObjectId] = useState("");
   const [params, setParams] = useState([]);
-  const [editing, setEditing] = useState(null); // 'method'|'version'|'resource'|param index
+  const [editing, setEditing] = useState("custom"); // 'method'|'version'|'resource'|param index
   const [autoConsistency, setAutoConsistency] = useState(true);
   const [body, setBody] = useState("{\n  \n}");
   const [customHeaders, setCustomHeaders] = useState([]); // [{key,value}]
@@ -849,7 +885,7 @@ function GraphBlocks() {
   const [msalApp, setMsalApp] = useState(null);
   const [showSetup, setShowSetup] = useState(false);
   const [consented, setConsented] = useState([]);
-  const [customPath, setCustomPath] = useState("me/drive/root/children");
+  const [customPath, setCustomPath] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [histOpen, setHistOpen] = useState(false);
   const [signInModal, setSignInModal] = useState(false);
@@ -1179,44 +1215,64 @@ function GraphBlocks() {
         idx && terms.length
           ? idx.filter(([p]) => { const lp = p.toLowerCase(); return terms.every((t) => lp.includes(t)); }).slice(0, 30)
           : [];
+      // top-level resource groups (first path segment), Graph Explorer style
+      const topGroups = idx && !terms.length ? (() => {
+        const seen = {};
+        for (const [p] of idx) {
+          const seg = p.split("/")[1];
+          if (seg && !seg.startsWith("{")) seen[seg] = (seen[seg] || 0) + 1;
+        }
+        return Object.keys(seen).sort().map((g) => [g, seen[g]]);
+      })() : null;
       return (
-        <Section title={idx ? `Search all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={close}>
+        <Section title={idx ? `Browse all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={close}>
           <input
             value={customPath}
             onChange={(e) => setCustomPath(e.target.value)}
-            placeholder={idx ? "search all Graph paths, e.g. autopilot or users messages" : "e.g. me/drive/root/children"}
+            placeholder={idx ? "Search resources, e.g. autopilot or users messages" : "e.g. me/drive/root/children"}
             className="w-full"
             style={field()}
           />
           {idx ? (
             <>
-              <p className="text-xs mt-2" style={{ color: C.dim }}>
-                Searching {idx.length.toLocaleString()} official {version} paths — type words to narrow, tap to use.
-              </p>
-              {matches.length > 0 && (
-                <div className="mt-2 rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 280, overflowY: "auto" }}>
-                  {matches.map(([p, m]) => (
-                    <button
-                      key={p}
-                      onClick={() => setCustomPath(p.slice(1))}
-                      className="w-full text-left px-3 py-2 flex items-center justify-between gap-2"
-                      style={{ borderBottom: `1px solid ${C.line}`, background: "/" + res.path === p ? C.panel : "transparent" }}
-                    >
-                      <span className="text-xs break-all" style={{ fontFamily: MONO, color: C.text }}>{p}</span>
-                      <span className="text-xs font-bold whitespace-nowrap" style={{ fontFamily: MONO, color: C.param }}>
-                        {m.split("").map((l) => METH_NAME[l][0] + METH_NAME[l].slice(1).toLowerCase()).join(" ")}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              {terms.length > 0 ? (
+                <>
+                  <p className="text-xs mt-2" style={{ color: C.dim }}>{matches.length} result{matches.length !== 1 ? "s" : ""} — tap to use.</p>
+                  {matches.length > 0 && (
+                    <div className="mt-2 rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 320, overflowY: "auto" }}>
+                      {matches.map(([p, m]) => (
+                        <button
+                          key={p}
+                          onClick={() => setCustomPath(p.slice(1))}
+                          className="w-full text-left px-3 py-2 flex items-center justify-between gap-2"
+                          style={{ borderBottom: `1px solid ${C.line}`, background: "/" + res.path === p ? C.panel : "transparent" }}
+                        >
+                          <span className="text-xs break-all" style={{ fontFamily: MONO, color: C.text }}>{p}</span>
+                          <span className="text-xs font-bold whitespace-nowrap" style={{ fontFamily: MONO, color: C.param }}>
+                            {m.split("").map((l) => METH_NAME[l][0] + METH_NAME[l].slice(1).toLowerCase()).join(" ")}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs mt-2 mb-1" style={{ color: C.dim }}>Resources available — expand a group to drill in, or search above.</p>
+                  <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 340, overflowY: "auto" }}>
+                    {topGroups.map(([g, count]) => (
+                      <ResourceGroup key={g} group={g} count={count} idx={idx} onPick={(p) => setCustomPath(p.slice(1))} />
+                    ))}
+                  </div>
+                </>
               )}
-              {learn && <Tip>This is the complete Microsoft Graph surface, extracted from Microsoft's official OpenAPI specs (msgraph-metadata) — every endpoint that exists, including ones no portal exposes. Switch the version block to search beta vs v1.0.</Tip>}
+              {learn && <Tip>This is the complete Microsoft Graph surface, extracted from Microsoft's official OpenAPI specs. Switch the version block to browse beta vs v1.0.</Tip>}
             </>
           ) : (
             <>
               {learn && <Tip>{GOTCHAS.custom}</Tip>}
               <p className="text-xs mt-2" style={{ color: C.dim }}>
-                Full-index search (27,000+ official Graph paths) activates when <span style={{ fontFamily: MONO, color: C.text }}>graph-paths.js</span> sits next to this file — it's the companion file generated alongside this app.
+                Full-index browsing (27,000+ official Graph paths) activates when <span style={{ fontFamily: MONO, color: C.text }}>graph-paths.js</span> sits next to this file.
               </p>
             </>
           )}
@@ -1458,14 +1514,14 @@ function GraphBlocks() {
               Learn mode {learn ? "on" : "off"}
             </button>
             <button
-              onClick={() => setHistOpen(!histOpen)}
+              onClick={() => { setHistOpen(!histOpen); setHelpOpen(false); }}
               className="transition-colors"
               style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}` }}
             >
               History{history.length ? ` (${history.length})` : ""}
             </button>
             <button
-              onClick={() => setHelpOpen(!helpOpen)}
+              onClick={() => { setHelpOpen(!helpOpen); setHistOpen(false); }}
               className="transition-colors"
               style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}` }}
             >
@@ -1564,7 +1620,7 @@ function GraphBlocks() {
                 style={{ ...field(), padding: "5px 9px", fontSize: 12 }}
                 title="Quickly switch resource"
               >
-                {getPathIndex(version) && <option value="custom">🔍 Search every Graph path…</option>}
+                <option value="custom">{getPathIndex(version) ? "🔍 Search every Graph path…" : "Custom path…"}</option>
                 {CATEGORIES.map((c) => (
                   <optgroup key={c.name} label={c.name}>
                     {c.ids.map((id) => { const r = RESOURCES.find((x) => x.id === id); return <option key={id} value={id}>{r.label}{r.betaOnly ? " (β)" : ""}</option>; })}
