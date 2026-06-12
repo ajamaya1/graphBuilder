@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Graph Builder</title>
 <script>
-window.GRAPH_BLOCKS_CONFIG = { clientId: "a141769f-32b8-402d-aa79-09c09e9a8708", tenantId: "" };
+window.GRAPH_BLOCKS_CONFIG = { clientId: "4e5a962d-db81-4900-a557-22d252fb7ca1", tenantId: "" };
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
@@ -971,7 +971,7 @@ function GraphBlocks() {
   }
 
   function adminConsentUrl() {
-    const t = tenantId.trim() || "common";
+    const t = tenantId.trim() || "organizations";
     const chosen = ADMIN_CONSENT_SCOPES;
     return `https://login.microsoftonline.com/${t}/v2.0/adminconsent?client_id=${clientId.trim()}&scope=${encodeURIComponent(chosen.join(" "))}&redirect_uri=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
   }
