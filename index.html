@@ -419,6 +419,16 @@ const READ_SCOPES = [
   "SecurityAlert.Read.All", "SecurityIncident.Read.All", "SecurityEvents.Read.All",
 ];
 
+// the basic read set granted in one click via org-wide admin consent
+const ADMIN_CONSENT_SCOPES = [
+  "User.Read.All",
+  "Group.Read.All",
+  "Device.Read.All",
+  "DeviceManagementManagedDevices.Read.All",
+  "DeviceManagementConfiguration.Read.All",
+  "Directory.Read.All",
+];
+
 const PARAM_TYPES = [
   { id: "select", label: "$select", hint: "pick columns" },
   { id: "filter", label: "$filter", hint: "narrow results" },
@@ -933,15 +943,19 @@ function GraphBlocks() {
           clientId: clientId.trim(),
           authority: tenantId.trim()
             ? `https://login.microsoftonline.com/${tenantId.trim()}`
-            : "https://login.microsoftonline.com/organizations",
+            : "https://login.microsoftonline.com/common",
           redirectUri: window.location.origin + window.location.pathname,
         },
         cache: { cacheLocation: "memoryStorage" },
       });
       if (app.initialize) await app.initialize();
-      const r = await app.loginPopup({ scopes: ["openid", "profile", "offline_access"] });
+      // request the full read set up front so admins get the consent prompt and the service principal is provisioned at sign-in (Hydration Kit style)
+      const signInScopes = ADMIN_CONSENT_SCOPES.map((s) => `https://graph.microsoft.com/${s}`)
+        .concat(["openid", "profile", "offline_access"]);
+      const r = await app.loginPopup({ scopes: signInScopes });
       setMsalApp(app);
       setAccount(r.account);
+      setConsented((prev) => [...new Set([...prev, ...ADMIN_CONSENT_SCOPES])]);
     } catch (e) {
       setError(
         /popup|window/i.test(e.message || "")
@@ -957,8 +971,8 @@ function GraphBlocks() {
   }
 
   function adminConsentUrl() {
-    const t = tenantId.trim() || "organizations";
-    const chosen = READ_SCOPES;
+    const t = tenantId.trim() || "common";
+    const chosen = ADMIN_CONSENT_SCOPES;
     return `https://login.microsoftonline.com/${t}/v2.0/adminconsent?client_id=${clientId.trim()}&scope=${encodeURIComponent(chosen.join(" "))}&redirect_uri=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
   }
 
@@ -1415,7 +1429,7 @@ function GraphBlocks() {
                   className="text-xs underline mt-2"
                   style={{ color: C.dim, background: "none", border: "none", padding: 0, cursor: "pointer" }}
                 >
-                  Admin: pre-consent all read-only scopes org-wide
+                  Admin: approve the {ADMIN_CONSENT_SCOPES.length} basic read scopes org-wide
                 </button>
             </>
           )}
