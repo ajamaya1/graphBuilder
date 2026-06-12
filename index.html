@@ -1140,7 +1140,11 @@ function GraphBlocks() {
       setNextLink(data?.["@odata.nextLink"] || null);
       if (!uri) {
         // log fresh runs (not pagination) to history
-        setHistory((prev) => [{ method, url, version, at: Date.now(), status: `${r.status}` }, ...prev.filter((h) => !(h.url === url && h.method === method))].slice(0, 30));
+        setHistory((prev) => [{
+          method, url, version, at: Date.now(), status: `${r.status}`,
+          resourceId, objectId, customPath,
+          params: JSON.parse(JSON.stringify(params)),
+        }, ...prev.filter((h) => !(h.url === url && h.method === method))].slice(0, 30));
       }
     } catch (e) {
       setError(e.message === "Failed to fetch" ? "Request blocked or network error — your session may have expired (try signing out and back in), or the endpoint rejected the call." : e.message);
@@ -1502,7 +1506,16 @@ function GraphBlocks() {
               ) : history.map((h) => (
                 <button
                   key={h.at}
-                  onClick={() => { setVersion(h.version); setResourceId("custom"); setCustomPath(h.url.replace(/^https:\/\/graph\.microsoft\.com\/(v1\.0|beta)\//, "")); setMethod(h.method); setObjectId(""); setParams([]); setEditing(null); setHistOpen(false); }}
+                  onClick={() => {
+                    setMethod(h.method);
+                    setVersion(h.version);
+                    setResourceId(h.resourceId || "custom");
+                    setObjectId(h.objectId || "");
+                    if (h.customPath) setCustomPath(h.customPath);
+                    setParams(h.params ? JSON.parse(JSON.stringify(h.params)) : []);
+                    setEditing(null);
+                    setHistOpen(false);
+                  }}
                   className="w-full text-left px-2 py-1.5 rounded flex items-center gap-2"
                   onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
                   onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
