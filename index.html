@@ -299,6 +299,21 @@ const CATEGORIES = [
   { name: "Reports & audit", ids: ["signIns", "directoryAudits"] },
 ];
 
+const TEMPLATES = [
+  { name: "Non-compliant devices", desc: "Devices failing compliance policy", icon: "⚠", resId: "managedDevices", version: "beta", method: "GET", params: [{ type: "select", value: "deviceName,complianceState,operatingSystem,userPrincipalName" }, { type: "filter", value: "complianceState eq 'noncompliant'", prop: "complianceState", op: "eq", rhs: "noncompliant" }] },
+  { name: "Stale devices (no sync 30d)", desc: "Devices that haven't checked in recently", icon: "⏱", resId: "managedDevices", version: "beta", method: "GET", params: [{ type: "select", value: "deviceName,lastSyncDateTime,operatingSystem,userPrincipalName" }, { type: "top", value: "50" }] },
+  { name: "Disabled user accounts", desc: "Users with sign-in blocked", icon: "🚫", resId: "users", version: "v1.0", method: "GET", params: [{ type: "select", value: "displayName,userPrincipalName,accountEnabled" }, { type: "filter", value: "accountEnabled eq false", prop: "accountEnabled", op: "eq", rhs: "false" }] },
+  { name: "Guest users", desc: "External / B2B guest accounts", icon: "👤", resId: "users", version: "v1.0", method: "GET", params: [{ type: "select", value: "displayName,userPrincipalName,mail,userType" }, { type: "filter", value: "userType eq 'Guest'", prop: "userType", op: "eq", rhs: "Guest" }] },
+  { name: "Autopilot devices", desc: "All registered Autopilot identities", icon: "✈", resId: "autopilot", version: "v1.0", method: "GET", params: [{ type: "select", value: "serialNumber,model,manufacturer,groupTag,enrollmentState" }] },
+  { name: "Conditional Access policies", desc: "All CA policies and their state", icon: "🔒", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{ type: "select", value: "displayName,state,createdDateTime,modifiedDateTime" }] },
+  { name: "License usage", desc: "SKU summary — consumed vs available", icon: "🪪", resId: "subscribedSkus", version: "v1.0", method: "GET", params: [] },
+  { name: "Recent sign-ins", desc: "Latest sign-in activity (requires P1/P2)", icon: "🔑", resId: "signIns", version: "v1.0", method: "GET", params: [{ type: "select", value: "userPrincipalName,appDisplayName,status,createdDateTime,ipAddress" }, { type: "top", value: "50" }] },
+  { name: "App registrations", desc: "All registered applications", icon: "📋", resId: "applications", version: "v1.0", method: "GET", params: [{ type: "select", value: "displayName,appId,signInAudience,createdDateTime" }] },
+  { name: "Security alerts", desc: "Active security alerts", icon: "🛡", resId: "securityAlerts", version: "v1.0", method: "GET", params: [{ type: "select", value: "title,severity,status,category,createdDateTime" }] },
+  { name: "Risky users", desc: "Users flagged by Identity Protection", icon: "⚡", resId: "riskyUsers", version: "v1.0", method: "GET", params: [{ type: "select", value: "userDisplayName,userPrincipalName,riskLevel,riskState,riskLastUpdatedDateTime" }] },
+  { name: "Intune apps", desc: "All managed mobile apps", icon: "📱", resId: "mobileApps", version: "v1.0", method: "GET", params: [{ type: "select", value: "displayName,publisher,isAssigned,createdDateTime" }] },
+];
+
 const OPS = [
   { id: "eq", label: "equals", adv: false },
   { id: "ne", label: "not equals", adv: true },
@@ -1258,6 +1273,34 @@ function GraphBlocks() {
                 </>
               ) : (
                 <>
+                  <div className="mt-3 mb-4">
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.dim, marginBottom: 8 }}>Starter templates — click to load</div>
+                    <div className="grid grid-cols-2 gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                      {TEMPLATES.map((t) => (
+                        <button
+                          key={t.name}
+                          onClick={() => {
+                            setMethod(t.method);
+                            setVersion(t.version);
+                            setResourceId(t.resId);
+                            setObjectId("");
+                            setParams(t.params.map((p, i) => ({ ...p, id: Date.now() + i })));
+                            setEditing(null);
+                          }}
+                          className="text-left px-3 py-2.5 rounded-lg"
+                          style={{ background: C.panel, border: `1px solid ${C.line}` }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.resource; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: 14 }}>{t.icon}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{t.name}</span>
+                          </div>
+                          <div style={{ fontSize: 10.5, color: C.dim, marginTop: 3 }}>{t.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <p className="text-xs mt-2 mb-1" style={{ color: C.dim }}>Resources available — expand a group to drill in, or search above.</p>
                   <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 340, overflowY: "auto" }}>
                     {topGroups.map(([g, count]) => (
