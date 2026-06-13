@@ -485,6 +485,37 @@ const PARAM_TYPES = [
   { id: "expand", label: "$expand", hint: "join related" },
 ];
 
+// ── per-param colors: each block type snaps in with its own hue ──
+// [dark theme, light theme]
+const PARAM_COLORS = {
+  select:  ["#5B9DF0", "#2D6CE0"], // blue
+  filter:  ["#F2D34E", "#A98E0C"], // gold
+  top:     ["#FF9A6B", "#D45A1F"], // coral
+  orderby: ["#6FD8E8", "#0E8BA5"], // cyan
+  count:   ["#A8E06B", "#55901A"], // lime
+  expand:  ["#D08BF0", "#9333D6"], // orchid
+};
+const paramColor = (t) => {
+  const pair = PARAM_COLORS[t];
+  return pair ? (C === THEMES.dark ? pair[0] : pair[1]) : C.param;
+};
+
+// ── for-each chains: common sub-queries per resource ─────────
+// {id} (or any {property}) is replaced with each parent row's value.
+const CHAINS = {
+  groups: ["groups/{id}/members", "groups/{id}/owners", "groups/{id}/memberOf"],
+  users: ["users/{id}/memberOf", "users/{id}/licenseDetails", "users/{id}/authentication/methods", "users/{id}/ownedDevices"],
+  managedDevices: ["deviceManagement/managedDevices/{id}/detectedApps", "deviceManagement/managedDevices/{id}/deviceCompliancePolicyStates"],
+  devices: ["devices/{id}/registeredOwners", "devices/{id}/memberOf"],
+  applications: ["applications/{id}/owners"],
+  servicePrincipals: ["servicePrincipals/{id}/appRoleAssignments", "servicePrincipals/{id}/owners"],
+  mobileApps: ["deviceAppManagement/mobileApps/{id}/assignments"],
+  compliancePolicies: ["deviceManagement/deviceCompliancePolicies/{id}/assignments"],
+  deviceConfigurations: ["deviceManagement/deviceConfigurations/{id}/assignments"],
+  configurationPolicies: ["deviceManagement/configurationPolicies/{id}/assignments"],
+  directoryRoles: ["directoryRoles/{id}/members"],
+};
+
 // ── helpers ──────────────────────────────────────────────────
 function clauseToOData(c, res) {
   const isBool = res?.bools?.includes(c.prop);
@@ -907,6 +938,9 @@ function GraphBlocks() {
   const [autoConsistency, setAutoConsistency] = useState(true);
   const [body, setBody] = useState("{\n  \n}");
   const [customHeaders, setCustomHeaders] = useState([]); // [{key,value}]
+  const [chainPath, setChainPath] = useState("");   // for-each sub-query, e.g. groups/{id}/members
+  const [chainLimit, setChainLimit] = useState(25); // max parent rows to iterate
+  const [chainProgress, setChainProgress] = useState(null); // "12/25" while looping
   const [lastToken, setLastToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [running, setRunning] = useState(false);
@@ -1023,6 +1057,26 @@ function GraphBlocks() {
   }, [res, method]);
 
   const ps = useMemo(() => {
+    if (chainPath.trim() && method === "GET" && !objectId) {
+      // full foreach script — the loop version of this query
+      const tmpl = chainPath.trim().replace(/^\//, "").replace(/\{([^}]+)\}/g, (_, k) => `$($p.${k})`);
+      return [
+        res.scope ? `Connect-MgGraph -Scopes '${res.scope}'` : `Connect-MgGraph  # add -Scopes for this endpoint`,
+        ``,
+        `# 1. get the parent rows`,
+        `$parents = Invoke-MgGraphRequest -Method GET -Uri '${url}' |`,
+        `    Select-Object -ExpandProperty value | Select-Object -First ${chainLimit}`,
+        ``,
+        `# 2. loop them — one sub-query per row`,
+        `$results = foreach ($p in $parents) {`,
+        `    Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/${version}/${tmpl}" |`,
+        `        Select-Object -ExpandProperty value |`,
+        `        ForEach-Object { $_ | Add-Member -NotePropertyName parent -NotePropertyValue $p.id -PassThru }`,
+        `}`,
+        ``,
+        `$results | Format-Table`,
+      ].join("\n");
+    }
     const lines = [res.scope ? `Connect-MgGraph -Scopes '${res.scope}'` : `Connect-MgGraph  # add -Scopes for this endpoint (Find-MgGraphCommand shows them)`];
     let call = `Invoke-MgGraphRequest -Method ${method} -Uri '${url}'`;
     if (consistencyOn) call += ` -Headers @{ ConsistencyLevel = 'eventual' }`;
@@ -1030,7 +1084,7 @@ function GraphBlocks() {
     lines.push(call + (method === "GET" && !objectId ? " |" : ""));
     if (method === "GET" && !objectId) lines.push("    Select-Object -ExpandProperty value");
     return lines.join("\n");
-  }, [res, method, url, consistencyOn, body, objectId]);
+  }, [res, method, url, consistencyOn, body, objectId, chainPath, chainLimit, version]);
 
   const sdkCmd = useMemo(() => {
     const m = SDK[res.id];
@@ -1216,6 +1270,59 @@ function GraphBlocks() {
       }
       if (uri && result?.value && data?.value) {
         setResult({ ...data, value: [...result.value, ...data.value] });
+      } else if (chainPath.trim() && method === "GET" && !uri && Array.isArray(data?.value)) {
+        // ── for-each chain: loop the parent rows, run the sub-query on each ──
+        const parents = data.value.slice(0, Math.max(1, Math.min(100, chainLimit)));
+        const tmpl = chainPath.trim().replace(/^\//, "");
+        const labelKey = ["displayName", "deviceName", "userPrincipalName", "name", "title", "id"]
+          .find((k) => parents[0] && parents[0][k] != null);
+        const combined = [];
+        let skipped = 0;
+        for (let i = 0; i < parents.length; i++) {
+          const row = parents[i];
+          setChainProgress(`${i + 1}/${parents.length}`);
+          // substitute every {placeholder} from the parent row
+          let missing = false;
+          const sub = tmpl.replace(/\{([^}]+)\}/g, (_, k) => {
+            const v = row[k];
+            if (v == null) { missing = true; return ""; }
+            return encodeURIComponent(String(v));
+          });
+          if (missing) { skipped++; continue; }
+          try {
+            const cr = await fetch(`https://graph.microsoft.com/${version}/${sub}`, { headers });
+            if (cr.status === 429) { // throttled: honor Retry-After once
+              const wait = parseInt(cr.headers.get("Retry-After") || "2", 10) * 1000;
+              await new Promise((res2) => setTimeout(res2, wait));
+              i--; continue;
+            }
+            const ct = await cr.text();
+            let cd = null;
+            try { cd = ct ? JSON.parse(ct) : {}; } catch { cd = { raw: ct }; }
+            if (!cr.ok) { skipped++; continue; }
+            const items = Array.isArray(cd?.value) ? cd.value : [cd];
+            for (const item of items) {
+              combined.push({ parent: labelKey ? row[labelKey] : row.id, ...item });
+            }
+          } catch { skipped++; }
+          await new Promise((res2) => setTimeout(res2, 60)); // gentle pacing
+        }
+        setChainProgress(null);
+        setResult({
+          "@graphbuilder.chain": `${tmpl} across ${parents.length} ${res.label || "items"}${skipped ? ` (${skipped} skipped)` : ""}`,
+          value: combined,
+        });
+        setNextLink(null);
+        if (combined[0]) {
+          const keys = Object.keys(combined[0]).filter((k) => !k.startsWith("@"));
+          if (keys.length) setDiscoveredProps(keys);
+        }
+        setHistory((prev) => [{
+          method, url, version, at: Date.now(), status: "chain",
+          resourceId, objectId, customPath, chainPath, chainLimit,
+          params: JSON.parse(JSON.stringify(params)),
+        }, ...prev.filter((h) => !(h.url === url && h.method === method))].slice(0, 30));
+        return; // chain owns the result; skip the single-query bookkeeping below
       } else {
         setResult(data);
       }
@@ -1238,17 +1345,22 @@ function GraphBlocks() {
       setError(e.message === "Failed to fetch" ? "Request blocked or network error — your session may have expired (try signing out and back in), or the endpoint rejected the call." : e.message);
     } finally {
       setRunning(false);
+      setChainProgress(null);
     }
   }
 
   // result table columns
   const rows = result?.value || (result && !result.value ? [result] : []);
   const cols = useMemo(() => {
+    if (result?.["@graphbuilder.chain"] && rows.length) {
+      // chain output: columns come from the combined child rows, parent first
+      return ["parent", ...Object.keys(rows[0]).filter((k) => k !== "parent" && !k.startsWith("@") && typeof rows[0][k] !== "object").slice(0, 4)];
+    }
     const sel = params.find((p) => p.type === "select")?.props;
     if (sel?.length) return sel.slice(0, 6);
     if (!rows.length) return [];
     return Object.keys(rows[0]).filter((k) => !k.startsWith("@") && typeof rows[0][k] !== "object").slice(0, 5);
-  }, [rows, params]);
+  }, [rows, params, result]);
 
   // ── editor panel content ──
   function EditorPanel() {
@@ -1359,6 +1471,41 @@ function GraphBlocks() {
         </Section>
       );
     }
+    if (editing === "chain") {
+      const suggestions = CHAINS[res.id] || [];
+      return (
+        <Section title="foreach — run a sub-query per result" accent={C.header} right={close}>
+          <p className="text-xs mb-2" style={{ color: C.dim }}>
+            Loops your results: for every row the main query returns, Graph Builder calls this path with <span style={{ fontFamily: MONO, color: C.text }}>{"{id}"}</span> (or any <span style={{ fontFamily: MONO, color: C.text }}>{"{property}"}</span>) swapped in from that row. Results combine into one table with a <span style={{ fontFamily: MONO, color: C.text }}>parent</span> column.
+          </p>
+          <input
+            value={chainPath}
+            onChange={(e) => setChainPath(e.target.value)}
+            placeholder={suggestions[0] || "e.g. groups/{id}/members"}
+            className="w-full"
+            style={field()}
+          />
+          {suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {suggestions.map((s) => (
+                <button key={s} onClick={() => setChainPath(s)} style={{ ...ghostBtn(C.header), fontFamily: MONO, fontSize: 11 }}>{s}</button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2 mt-3">
+            <span className="text-xs" style={{ color: C.dim }}>Loop the first</span>
+            <input
+              type="number" min="1" max="100"
+              value={chainLimit}
+              onChange={(e) => setChainLimit(Math.max(1, Math.min(100, parseInt(e.target.value) || 25)))}
+              style={{ ...field(), width: 70, padding: "5px 8px" }}
+            />
+            <span className="text-xs" style={{ color: C.dim }}>rows (max 100 — each row is a real API call)</span>
+          </div>
+          {learn && <Tip>This is the visual version of a PowerShell foreach loop — check Code &amp; snippets after running: the generated script shows the exact same loop, ready to run in a terminal. It's how admins script "get all X, then for each, get its Y".</Tip>}
+        </Section>
+      );
+    }
     if (editing === "id")
       return (
         <Section title="Object ID — fetch a single item" accent={C.resource} right={close}>
@@ -1379,7 +1526,7 @@ function GraphBlocks() {
       if (!p) return null;
       if (p.type === "select")
         return (
-          <Section title="$select — pick columns" accent={C.param} right={close}>
+          <Section title="$select — pick columns" accent={paramColor("select")} right={close}>
             {propList.length ? (
               <div className="flex flex-wrap gap-2">
                 {propList.map((prop) => (
@@ -1413,7 +1560,7 @@ function GraphBlocks() {
         );
       if (p.type === "filter")
         return (
-          <Section title="$filter — build clauses" accent={C.param} right={close}>
+          <Section title="$filter — build clauses" accent={paramColor("filter")} right={close}>
             {p.clauses.map((c, ci) => (
               <div key={ci} className="flex flex-wrap items-center gap-2 mb-2">
                 {propList.length ? (
@@ -1488,7 +1635,7 @@ function GraphBlocks() {
         );
       if (p.type === "top")
         return (
-          <Section title="$top — limit results" accent={C.param} right={close}>
+          <Section title="$top — limit results" accent={paramColor("top")} right={close}>
             <input
               type="number" min="1" max="999"
               value={p.value}
@@ -1501,7 +1648,7 @@ function GraphBlocks() {
         );
       if (p.type === "orderby")
         return (
-          <Section title="$orderby — sort" accent={C.param} right={close}>
+          <Section title="$orderby — sort" accent={paramColor("orderby")} right={close}>
             <div className="flex flex-wrap items-center gap-2">
               {propList.length ? (
                 <select
@@ -1530,7 +1677,7 @@ function GraphBlocks() {
         );
       if (p.type === "expand")
         return (
-          <Section title="$expand — related data" accent={C.param} right={close}>
+          <Section title="$expand — related data" accent={paramColor("expand")} right={close}>
             <select
               value={p.value}
               onChange={(e) => updateParam(editing, { value: e.target.value })}
@@ -1547,7 +1694,7 @@ function GraphBlocks() {
         );
       if (p.type === "count")
         return (
-          <Section title="$count" accent={C.param} right={close}>
+          <Section title="$count" accent={paramColor("count")} right={close}>
             <p className="text-sm" style={{ color: C.dim }}>Adds <span style={{ fontFamily: MONO, color: C.text }}>$count=true</span> — the total appears as <span style={{ fontFamily: MONO, color: C.text }}>@odata.count</span> in the response.</p>
             {learn && <Tip>{TIPS.count}</Tip>}
           </Section>
@@ -1649,6 +1796,8 @@ function GraphBlocks() {
                     setObjectId(h.objectId || "");
                     if (h.customPath) setCustomPath(h.customPath);
                     setParams(h.params ? JSON.parse(JSON.stringify(h.params)) : []);
+                    setChainPath(h.chainPath || "");
+                    if (h.chainLimit) setChainLimit(h.chainLimit);
                     setEditing(null);
                     setHistOpen(false);
                   }}
@@ -1708,7 +1857,7 @@ function GraphBlocks() {
                 ))}
               </select>
               <button
-                onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); }}
+                onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
                 style={ghostBtn()}
                 title="Start a fresh query"
               >
@@ -1765,8 +1914,11 @@ function GraphBlocks() {
               />
             )}
             {params.map((p, i) => (
-              <Block key={i} color={C.param} label={"$" + p.type} value={paramValue(p)} onClick={() => setEditing(i)} onRemove={() => removeParam(i)} />
+              <Block key={i} color={paramColor(p.type)} label={"$" + p.type} value={paramValue(p)} onClick={() => setEditing(i)} onRemove={() => removeParam(i)} />
             ))}
+            {chainPath && method === "GET" && (
+              <Block color={C.header} label="foreach" value={`→ ${chainPath} (first ${chainLimit})`} onClick={() => setEditing("chain")} onRemove={() => { setChainPath(""); setEditing(null); }} />
+            )}
             {consistencyOn && <Block color={C.header} label="header" value="ConsistencyLevel" onClick={() => setAutoConsistency(false)} />}
           </div>
 
@@ -1788,12 +1940,22 @@ function GraphBlocks() {
                   key={t.id}
                   onClick={() => addParam(t.id)}
                   className="transition-colors"
-                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, background: "transparent", color: C.param, border: `1px solid ${hexA(C.param, 0.35)}`, fontFamily: MONO }}
+                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, background: "transparent", color: paramColor(t.id), border: `1px solid ${hexA(paramColor(t.id), 0.35)}`, fontFamily: MONO }}
                   title={t.hint}
                 >
                   + {t.label}
                 </button>
               ))}
+              {method === "GET" && !chainPath && (
+                <button
+                  onClick={() => setEditing("chain")}
+                  className="transition-colors"
+                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, background: "transparent", color: C.header, border: `1px solid ${hexA(C.header, 0.35)}`, fontFamily: MONO }}
+                  title="Loop the results: run a sub-query for each row"
+                >
+                  + foreach
+                </button>
+              )}
             </div>
           )}
 
@@ -1857,7 +2019,7 @@ function GraphBlocks() {
           <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
             <CopyBtn text={url} />
             <button
-              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); }}
+              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
               style={{ ...ghostBtn(), padding: "5px 12px", fontSize: 12 }}
               title="Clear query and start fresh"
             >
@@ -1877,7 +2039,7 @@ function GraphBlocks() {
               }}
               title={!account ? "Sign in (top right) to run" : `Run ${method}`}
             >
-              {running ? "Running…" : !account ? "Sign in to run" : `▶ Run`}
+              {running ? (chainProgress ? `Looping ${chainProgress}…` : "Running…") : !account ? "Sign in to run" : `▶ Run`}
             </button>
           </div>
         </div>
@@ -1997,6 +2159,11 @@ function GraphBlocks() {
           {resTab === "preview" && (
             result ? (
               <>
+                {result["@graphbuilder.chain"] && (
+                  <div className="mb-2" style={callout(C.header)}>
+                    <span style={{ fontFamily: MONO, fontSize: 11.5 }}>foreach → {result["@graphbuilder.chain"]} · {rows.length} combined rows</span>
+                  </div>
+                )}
                 <div className="flex justify-end items-center gap-1.5 mb-2 flex-wrap">
                   <span style={{ fontSize: 11, color: C.dim, marginRight: 2 }}>Export:</span>
                   {["csv", "xlsx", "pdf", "html"].map((fmt) => (
