@@ -48,7 +48,7 @@ input,select,textarea,button{font-family:inherit}
   .grid-cols-2{grid-template-columns:1fr !important}
   .px-4{padding-left:12px !important;padding-right:12px !important}
   .px-3{padding-left:10px !important;padding-right:10px !important}
-  button,select{min-height:38px}
+  select,input[type=text],input[type=number],textarea{min-height:38px}
   pre{font-size:11px !important}
   table{font-size:11px !important}
   h1{font-size:17px !important}
@@ -623,7 +623,7 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
           <span className="font-semibold uppercase" style={{ opacity: 0.62, fontSize: 8.5, letterSpacing: "0.08em", lineHeight: 1.3 }}>
             {label}{options && " ▾"}
           </span>
-          <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, maxWidth: 520, wordBreak: "break-word", textAlign: "left", lineHeight: 1.15 }}>
+          <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, maxWidth: "min(520px, 72vw)", wordBreak: "break-word", textAlign: "left", lineHeight: 1.15 }}>
             {value}
           </span>
         </button>
@@ -1704,7 +1704,7 @@ function GraphBlocks() {
   }
 
   return (
-    <div className="min-h-screen pb-16" style={{ background: C.bgGradient, color: C.text, fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif", zoom: window.innerWidth > 640 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
+    <div className="min-h-screen pb-16" style={{ background: C.bgGradient, color: C.text, fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif", zoom: window.innerWidth >= 1024 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
       <style>{`
         select option, select optgroup {
           background-color: ${C.surface};
