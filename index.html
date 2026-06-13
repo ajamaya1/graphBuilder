@@ -2018,8 +2018,10 @@ function GraphBlocks() {
 
         {/* request URL bar */}
         <div className="flex items-center gap-2 flex-wrap" style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 12, padding: "8px 12px", boxShadow: C.glassShadow }}>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0 }}>{method}</span>
-          <code className="flex-1 text-xs break-all" style={{ fontFamily: MONO, color: C.resource, minWidth: 0 }}>{url}</code>
+          <div className="flex items-center gap-2" style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0 }}>{method}</span>
+            <code className="flex-1 text-xs" style={{ fontFamily: MONO, color: C.resource, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>{url}</code>
+          </div>
           <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
             <CopyBtn text={url} />
             <button
