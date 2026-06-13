@@ -36,14 +36,14 @@ window.GRAPH_BLOCKS_CONFIG = { clientId: "4e5a962d-db81-4900-a557-22d252fb7ca1",
 })();
 </script>
 <script src="graph-paths.js"></script>
+<script src="graph-props.js"></script>
 <style>
-body{margin:0;background:#0D0F12;font-family:'Space Grotesk',system-ui,sans-serif;overflow-x:hidden}
+body{margin:0;background:#0D0F12;font-family:'Space Grotesk',system-ui,sans-serif;overflow-x:hidden;min-height:100vh;background-image:radial-gradient(60% 50% at 15% 0%, rgba(57,211,180,0.06), transparent 70%),radial-gradient(50% 45% at 90% 100%, rgba(91,157,240,0.06), transparent 70%)}
 input,select,textarea,button{font-family:inherit}
-.glass-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;transition:opacity 0.4s}
-.glass-bg::before,.glass-bg::after{content:'';position:absolute;border-radius:50%;filter:blur(120px);opacity:0.12}
-.glass-bg::before{width:600px;height:600px;background:#39D3B4;top:-200px;left:-100px}
-.glass-bg::after{width:500px;height:500px;background:#5B9DF0;bottom:-150px;right:-100px}
-.glass-orb{position:absolute;border-radius:50%;filter:blur(100px);opacity:0.08}
+.glass-orb{display:none}
+@supports not (backdrop-filter: blur(1px)){
+  .glass-bg{display:none}
+}
 @media(max-width:640px){
   .grid-cols-2{grid-template-columns:1fr !important}
   .px-4{padding-left:12px !important;padding-right:12px !important}
@@ -56,7 +56,6 @@ input,select,textarea,button{font-family:inherit}
 </style>
 </head>
 <body>
-<div class="glass-bg"><div class="glass-orb" style="width:400px;height:400px;background:#9B8CFF;top:30%;left:50%;position:absolute"></div></div>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useMemo } = React;
@@ -70,14 +69,14 @@ const { useState, useMemo } = React;
 const THEMES = {
   dark: {
     bg: "#0D0F12",
-    bgGradient: "radial-gradient(120% 80% at 50% -10%, rgba(22,27,34,0.85) 0%, rgba(13,15,18,0.9) 60%)",
+    bgGradient: "radial-gradient(120% 80% at 50% -10%, #161b22 0%, #0D0F12 60%)",
     surface: "#15181E",
-    glass: "rgba(21,24,30,0.55)",
+    glass: "rgba(24,28,35,0.92)",
     glassBorder: "rgba(255,255,255,0.07)",
     glassHighlight: "inset 0 1px 0 rgba(255,255,255,0.04)",
     glassShadow: "0 4px 30px rgba(0,0,0,0.25)",
-    fieldBg: "rgba(27,31,38,0.5)",
-    btnBg: "rgba(255,255,255,0.04)",
+    fieldBg: "rgba(27,31,38,0.92)",
+    btnBg: "rgba(40,45,54,0.9)",
     panel: "#1B1F26",
     line: "#262B33",
     text: "#E8EBF0",
@@ -94,14 +93,14 @@ const THEMES = {
   },
   light: {
     bg: "#F0F2F5",
-    bgGradient: "radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,0.95) 0%, rgba(240,242,245,0.95) 60%)",
+    bgGradient: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #F0F2F5 60%)",
     surface: "#FFFFFF",
-    glass: "rgba(255,255,255,0.6)",
+    glass: "rgba(255,255,255,0.94)",
     glassBorder: "rgba(0,0,0,0.08)",
     glassHighlight: "inset 0 1px 0 rgba(255,255,255,0.8)",
     glassShadow: "0 4px 24px rgba(0,0,0,0.06)",
-    fieldBg: "rgba(255,255,255,0.7)",
-    btnBg: "rgba(0,0,0,0.03)",
+    fieldBg: "rgba(248,249,251,0.95)",
+    btnBg: "rgba(245,246,248,0.95)",
     panel: "#F5F6F8",
     line: "#E4E7EC",
     text: "#181B21",
@@ -178,7 +177,7 @@ const RESOURCES = [
     path: "deviceManagement/managedDevices",
     scope: "DeviceManagementManagedDevices.Read.All",
     dir: false,
-    props: ["deviceName", "operatingSystem", "complianceState", "managementAgent", "manufacturer", "model", "serialNumber", "userPrincipalName", "enrolledDateTime", "lastSyncDateTime", "azureADDeviceId", "joinType"],
+    props: ["deviceName", "operatingSystem", "osVersion", "complianceState", "managementAgent", "manufacturer", "model", "serialNumber", "userPrincipalName", "userDisplayName", "emailAddress", "enrolledDateTime", "lastSyncDateTime", "azureADDeviceId", "azureADRegistered", "deviceEnrollmentType", "managedDeviceOwnerType", "managementState", "jailBroken", "deviceRegistrationState", "isEncrypted", "isSupervised", "totalStorageSpaceInBytes", "freeStorageSpaceInBytes", "imei", "meid", "wiFiMacAddress", "phoneNumber", "deviceCategoryDisplayName"],
     bools: [],
   },
   {
@@ -252,7 +251,7 @@ const RESOURCES = [
     path: "users",
     scope: "User.Read.All",
     dir: true,
-    props: ["displayName", "userPrincipalName", "mail", "department", "jobTitle", "accountEnabled", "officeLocation", "createdDateTime", "id"],
+    props: ["displayName", "givenName", "surname", "userPrincipalName", "mail", "otherMails", "department", "jobTitle", "companyName", "employeeId", "employeeType", "accountEnabled", "userType", "officeLocation", "city", "state", "country", "streetAddress", "postalCode", "mobilePhone", "businessPhones", "usageLocation", "preferredLanguage", "onPremisesSyncEnabled", "onPremisesSamAccountName", "onPremisesDistinguishedName", "createdDateTime", "lastPasswordChangeDateTime", "signInActivity", "manager", "id"],
     bools: ["accountEnabled"],
   },
   {
@@ -261,7 +260,7 @@ const RESOURCES = [
     path: "groups",
     scope: "Group.Read.All",
     dir: true,
-    props: ["displayName", "mailNickname", "securityEnabled", "mailEnabled", "groupTypes", "membershipRule", "createdDateTime", "id"],
+    props: ["displayName", "description", "mail", "mailNickname", "mailEnabled", "securityEnabled", "groupTypes", "membershipRule", "membershipRuleProcessingState", "visibility", "isAssignableToRole", "onPremisesSyncEnabled", "onPremisesSamAccountName", "createdDateTime", "renewedDateTime", "expirationDateTime", "classification", "resourceProvisioningOptions", "id"],
     bools: ["securityEnabled", "mailEnabled"],
   },
   {
@@ -270,7 +269,7 @@ const RESOURCES = [
     path: "devices",
     scope: "Device.Read.All",
     dir: true,
-    props: ["displayName", "deviceId", "operatingSystem", "operatingSystemVersion", "accountEnabled", "trustType", "profileType", "approximateLastSignInDateTime"],
+    props: ["displayName", "deviceId", "operatingSystem", "operatingSystemVersion", "accountEnabled", "trustType", "profileType", "deviceOwnership", "enrollmentType", "isCompliant", "isManaged", "isRooted", "managementType", "registrationDateTime", "approximateLastSignInDateTime", "onPremisesSyncEnabled", "manufacturer", "model", "id"],
     bools: ["accountEnabled"],
   },
   {
@@ -279,7 +278,7 @@ const RESOURCES = [
     path: "auditLogs/signIns",
     scope: "AuditLog.Read.All",
     dir: false,
-    props: ["userPrincipalName", "appDisplayName", "ipAddress", "createdDateTime", "status/errorCode", "clientAppUsed"],
+    props: ["userPrincipalName", "userDisplayName", "appDisplayName", "ipAddress", "createdDateTime", "status/errorCode", "status/failureReason", "clientAppUsed", "conditionalAccessStatus", "isInteractive", "riskState", "riskLevelDuringSignIn", "deviceDetail/operatingSystem", "deviceDetail/browser", "location/city", "location/countryOrRegion"],
     bools: [],
   },
   // ── Me (signed-in user) ──
@@ -303,8 +302,8 @@ const RESOURCES = [
   { id: "domains", label: "Domains", path: "domains", scope: "Domain.Read.All", dir: false, props: ["id", "isDefault", "isVerified", "authenticationType"], bools: ["isDefault", "isVerified"] },
   { id: "subscribedSkus", label: "Licenses (subscribed SKUs)", path: "subscribedSkus", scope: "Organization.Read.All", dir: false, props: ["skuPartNumber", "consumedUnits", "capabilityStatus", "appliesTo"], bools: [] },
   // ── Identity & apps ──
-  { id: "applications", label: "App registrations", path: "applications", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "signInAudience", "publisherDomain", "createdDateTime"], bools: [] },
-  { id: "servicePrincipals", label: "Enterprise apps (SPs)", path: "servicePrincipals", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "accountEnabled", "servicePrincipalType", "appOwnerOrganizationId"], bools: ["accountEnabled"] },
+  { id: "applications", label: "App registrations", path: "applications", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "signInAudience", "publisherDomain", "description", "notes", "createdDateTime", "identifierUris", "tags", "isFallbackPublicClient", "id"], bools: [] },
+  { id: "servicePrincipals", label: "Enterprise apps (SPs)", path: "servicePrincipals", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "accountEnabled", "servicePrincipalType", "appOwnerOrganizationId", "appDisplayName", "servicePrincipalNames", "tags", "preferredSingleSignOnMode", "loginUrl", "homepage", "replyUrls", "id"], bools: ["accountEnabled"] },
   { id: "conditionalAccessPolicies", label: "Conditional Access policies", path: "identity/conditionalAccess/policies", scope: "Policy.Read.All", dir: false, props: ["displayName", "state", "createdDateTime", "modifiedDateTime"], bools: [] },
   { id: "namedLocations", label: "Named locations", path: "identity/conditionalAccess/namedLocations", scope: "Policy.Read.All", dir: false, props: ["displayName", "createdDateTime", "modifiedDateTime"], bools: [] },
   { id: "riskyUsers", label: "Risky users", path: "identityProtection/riskyUsers", scope: "IdentityRiskyUser.Read.All", dir: false, props: ["userDisplayName", "userPrincipalName", "riskLevel", "riskState", "riskLastUpdatedDateTime"], bools: [] },
@@ -959,9 +958,7 @@ function GraphBlocks() {
   const [theme, setTheme] = useState("dark");
   C = THEMES[theme];
   if (typeof document !== "undefined") {
-    document.body.style.background = C.bg;
-    const orbs = document.querySelector(".glass-bg");
-    if (orbs) orbs.style.opacity = theme === "dark" ? "1" : "0.3";
+    document.body.style.backgroundColor = C.bg;
   }
   const CFG = (typeof window !== "undefined" && window.GRAPH_BLOCKS_CONFIG) || {};
   const [tenantId, setTenantId] = useState(CFG.tenantId || "");
@@ -1365,7 +1362,8 @@ function GraphBlocks() {
   // ── editor panel content ──
   function EditorPanel() {
     if (editing === null) return null;
-    const propList = res.props.length ? res.props : discoveredProps;
+    const fullProps = (typeof window !== "undefined" && window.GRAPH_PROPS && window.GRAPH_PROPS[res.id]) || null;
+    const propList = fullProps || (res.props.length ? res.props : discoveredProps);
     const close = (
       <button onClick={() => setEditing(null)} style={ghostBtn()}>
         Done
@@ -1528,7 +1526,7 @@ function GraphBlocks() {
         return (
           <Section title="$select — pick columns" accent={paramColor("select")} right={close}>
             {propList.length ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" style={{ maxHeight: 220, overflowY: "auto" }}>
                 {propList.map((prop) => (
                   <Chip
                     key={prop}
@@ -1549,10 +1547,13 @@ function GraphBlocks() {
                 style={field()}
               />
             )}
-            {!res.props.length && !discoveredProps.length && (
+            {fullProps && (
+              <p className="text-xs mt-2" style={{ color: paramColor("select") }}>All {fullProps.length} properties from the {res.label || res.id} schema.</p>
+            )}
+            {!fullProps && !res.props.length && !discoveredProps.length && (
               <p className="text-xs mt-2" style={{ color: C.dim }}>Run this query once and the columns from the response will appear here as buttons.</p>
             )}
-            {!res.props.length && discoveredProps.length > 0 && (
+            {!fullProps && !res.props.length && discoveredProps.length > 0 && (
               <p className="text-xs mt-2" style={{ color: C.resource }}>↑ Properties discovered from the last response.</p>
             )}
             {learn && <Tip>{TIPS.select}</Tip>}
