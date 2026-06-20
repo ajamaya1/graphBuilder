@@ -58,7 +58,19 @@ input,select,textarea,button{font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useMemo } = React;
+const { useState, useMemo, useEffect } = React;
+
+// ── localStorage persistence (history, saved queries, pinned resources) ──
+const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1" };
+const LS = {
+  get(key, fallback) {
+    try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  },
+  set(key, val) {
+    try { window.localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  },
+};
 
 // ─────────────────────────────────────────────────────────────
 // GRAPH BLOCKS — snap-together Microsoft Graph query builder
@@ -178,7 +190,7 @@ const RESOURCES = [
     scope: "DeviceManagementManagedDevices.Read.All",
     dir: false,
     props: ["deviceName", "operatingSystem", "osVersion", "complianceState", "managementAgent", "manufacturer", "model", "serialNumber", "userPrincipalName", "userDisplayName", "emailAddress", "enrolledDateTime", "lastSyncDateTime", "azureADDeviceId", "azureADRegistered", "deviceEnrollmentType", "managedDeviceOwnerType", "managementState", "jailBroken", "deviceRegistrationState", "isEncrypted", "isSupervised", "totalStorageSpaceInBytes", "freeStorageSpaceInBytes", "imei", "meid", "wiFiMacAddress", "phoneNumber", "deviceCategoryDisplayName"],
-    bools: [],
+    bools: ["jailBroken", "isEncrypted", "isSupervised", "azureADRegistered"],
   },
   {
     id: "cloudPCs",
@@ -252,7 +264,7 @@ const RESOURCES = [
     scope: "User.Read.All",
     dir: true,
     props: ["displayName", "givenName", "surname", "userPrincipalName", "mail", "otherMails", "department", "jobTitle", "companyName", "employeeId", "employeeType", "accountEnabled", "userType", "officeLocation", "city", "state", "country", "streetAddress", "postalCode", "mobilePhone", "businessPhones", "usageLocation", "preferredLanguage", "onPremisesSyncEnabled", "onPremisesSamAccountName", "onPremisesDistinguishedName", "createdDateTime", "lastPasswordChangeDateTime", "signInActivity", "manager", "id"],
-    bools: ["accountEnabled"],
+    bools: ["accountEnabled", "onPremisesSyncEnabled"],
   },
   {
     id: "groups",
@@ -261,7 +273,7 @@ const RESOURCES = [
     scope: "Group.Read.All",
     dir: true,
     props: ["displayName", "description", "mail", "mailNickname", "mailEnabled", "securityEnabled", "groupTypes", "membershipRule", "membershipRuleProcessingState", "visibility", "isAssignableToRole", "onPremisesSyncEnabled", "onPremisesSamAccountName", "createdDateTime", "renewedDateTime", "expirationDateTime", "classification", "resourceProvisioningOptions", "id"],
-    bools: ["securityEnabled", "mailEnabled"],
+    bools: ["securityEnabled", "mailEnabled", "isAssignableToRole", "onPremisesSyncEnabled"],
   },
   {
     id: "devices",
@@ -270,7 +282,7 @@ const RESOURCES = [
     scope: "Device.Read.All",
     dir: true,
     props: ["displayName", "deviceId", "operatingSystem", "operatingSystemVersion", "accountEnabled", "trustType", "profileType", "deviceOwnership", "enrollmentType", "isCompliant", "isManaged", "isRooted", "managementType", "registrationDateTime", "approximateLastSignInDateTime", "onPremisesSyncEnabled", "manufacturer", "model", "id"],
-    bools: ["accountEnabled"],
+    bools: ["accountEnabled", "isCompliant", "isManaged", "isRooted", "onPremisesSyncEnabled"],
   },
   {
     id: "signIns",
@@ -302,8 +314,8 @@ const RESOURCES = [
   { id: "domains", label: "Domains", path: "domains", scope: "Domain.Read.All", dir: false, props: ["id", "isDefault", "isVerified", "authenticationType"], bools: ["isDefault", "isVerified"] },
   { id: "subscribedSkus", label: "Licenses (subscribed SKUs)", path: "subscribedSkus", scope: "Organization.Read.All", dir: false, props: ["skuPartNumber", "consumedUnits", "capabilityStatus", "appliesTo"], bools: [] },
   // ── Identity & apps ──
-  { id: "applications", label: "App registrations", path: "applications", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "signInAudience", "publisherDomain", "description", "notes", "createdDateTime", "identifierUris", "tags", "isFallbackPublicClient", "id"], bools: [] },
-  { id: "servicePrincipals", label: "Enterprise apps (SPs)", path: "servicePrincipals", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "accountEnabled", "servicePrincipalType", "appOwnerOrganizationId", "appDisplayName", "servicePrincipalNames", "tags", "preferredSingleSignOnMode", "loginUrl", "homepage", "replyUrls", "id"], bools: ["accountEnabled"] },
+  { id: "applications", label: "App registrations", path: "applications", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "signInAudience", "publisherDomain", "description", "notes", "createdDateTime", "identifierUris", "tags", "isFallbackPublicClient", "id"], bools: ["isFallbackPublicClient"] },
+  { id: "servicePrincipals", label: "Enterprise apps (SPs)", path: "servicePrincipals", scope: "Application.Read.All", dir: true, props: ["displayName", "appId", "accountEnabled", "servicePrincipalType", "appOwnerOrganizationId", "appDisplayName", "servicePrincipalNames", "tags", "preferredSingleSignOnMode", "loginUrl", "homepage", "replyUrls", "id"], bools: ["accountEnabled", "signInRequired"] },
   { id: "conditionalAccessPolicies", label: "Conditional Access policies", path: "identity/conditionalAccess/policies", scope: "Policy.Read.All", dir: false, props: ["displayName", "state", "createdDateTime", "modifiedDateTime"], bools: [] },
   { id: "namedLocations", label: "Named locations", path: "identity/conditionalAccess/namedLocations", scope: "Policy.Read.All", dir: false, props: ["displayName", "createdDateTime", "modifiedDateTime"], bools: [] },
   { id: "riskyUsers", label: "Risky users", path: "identityProtection/riskyUsers", scope: "IdentityRiskyUser.Read.All", dir: false, props: ["userDisplayName", "userPrincipalName", "riskLevel", "riskState", "riskLastUpdatedDateTime"], bools: [] },
@@ -331,19 +343,400 @@ const CATEGORIES = [
 ];
 
 const TEMPLATES = [
-  { name: "Non-compliant devices", desc: "Devices failing compliance policy", icon: "⚠", resId: "managedDevices", version: "beta", method: "GET", params: [{ type: "select", props: ["deviceName","complianceState","operatingSystem","userPrincipalName"] }, { type: "filter", clauses: [{ prop: "complianceState", op: "eq", val: "noncompliant" }], join: "and" }] },
-  { name: "Stale devices (no sync 30d)", desc: "Devices that haven't checked in recently", icon: "⏱", resId: "managedDevices", version: "beta", method: "GET", params: [{ type: "select", props: ["deviceName","lastSyncDateTime","operatingSystem","userPrincipalName"] }, { type: "top", value: "50" }] },
-  { name: "Disabled user accounts", desc: "Users with sign-in blocked", icon: "🚫", resId: "users", version: "v1.0", method: "GET", params: [{ type: "select", props: ["displayName","userPrincipalName","accountEnabled"] }, { type: "filter", clauses: [{ prop: "accountEnabled", op: "eq", val: "false" }], join: "and" }] },
-  { name: "Guest users", desc: "External / B2B guest accounts", icon: "👤", resId: "users", version: "v1.0", method: "GET", params: [{ type: "select", props: ["displayName","userPrincipalName","mail","userType"] }, { type: "filter", clauses: [{ prop: "userType", op: "eq", val: "Guest" }], join: "and" }] },
-  { name: "Autopilot devices", desc: "All registered Autopilot identities", icon: "✈", resId: "autopilot", version: "v1.0", method: "GET", params: [{ type: "select", props: ["serialNumber","model","manufacturer","groupTag","enrollmentState"] }] },
-  { name: "Conditional Access policies", desc: "All CA policies and their state", icon: "🔒", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{ type: "select", props: ["displayName","state","createdDateTime","modifiedDateTime"] }] },
-  { name: "License usage", desc: "SKU summary — consumed vs available", icon: "🪪", resId: "subscribedSkus", version: "v1.0", method: "GET", params: [] },
-  { name: "Recent sign-ins", desc: "Latest sign-in activity (requires P1/P2)", icon: "🔑", resId: "signIns", version: "v1.0", method: "GET", params: [{ type: "select", props: ["userPrincipalName","appDisplayName","status","createdDateTime","ipAddress"] }, { type: "top", value: "50" }] },
-  { name: "App registrations", desc: "All registered applications", icon: "📋", resId: "applications", version: "v1.0", method: "GET", params: [{ type: "select", props: ["displayName","appId","signInAudience","createdDateTime"] }] },
-  { name: "Security alerts", desc: "Active security alerts", icon: "🛡", resId: "securityAlerts", version: "v1.0", method: "GET", params: [{ type: "select", props: ["title","severity","status","category","createdDateTime"] }] },
-  { name: "Risky users", desc: "Users flagged by Identity Protection", icon: "⚡", resId: "riskyUsers", version: "v1.0", method: "GET", params: [{ type: "select", props: ["userDisplayName","userPrincipalName","riskLevel","riskState","riskLastUpdatedDateTime"] }] },
-  { name: "Intune apps", desc: "All managed mobile apps", icon: "📱", resId: "mobileApps", version: "v1.0", method: "GET", params: [{ type: "select", props: ["displayName","publisher","isAssigned","createdDateTime"] }] },
+  // ── Device & Endpoint Reports ──
+  { cat: "Device & Endpoint Reports", icon: "🖥", name: "Intune Device Master Inventory", desc: "Full endpoint inventory — owner, hardware, OS, encryption, storage, enrollment & last check-in. The single source-of-truth device export.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"orderby","prop":"deviceName","dir":"asc"}] },
+  { cat: "Device & Endpoint Reports", icon: "🪟", name: "Windows Fleet Health & Posture", desc: "Every Windows endpoint with compliance, encryption, build, owner and last sync — fleet posture in one table.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"Windows"}],"join":"and"},{"type":"orderby","prop":"complianceState","dir":"asc"}] },
+  { cat: "Device & Endpoint Reports", icon: "🍎", name: "macOS Fleet Health & Posture", desc: "Mac estate with FileVault, supervision, build, owner and compliance.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"macOS"}],"join":"and"},{"type":"orderby","prop":"complianceState","dir":"asc"}] },
+  { cat: "Device & Endpoint Reports", icon: "📱", name: "Mobile Fleet (iOS/Android) Report", desc: "Apple + Android mobile estate — model, build, ownership, jailbreak/root and compliance.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","model","manufacturer","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"iOS"},{"prop":"operatingSystem","op":"eq","val":"Android"}],"join":"or"},{"type":"orderby","prop":"operatingSystem","dir":"asc"}] },
+  { cat: "Device & Endpoint Reports", icon: "🗑", name: "Stale Device Decommission Worklist", desc: "Oldest-checking-in devices with owner, OS, ownership, serial & compliance — the cleanup queue.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"orderby","prop":"lastSyncDateTime","dir":"asc"},{"type":"top","value":"200"}] },
+  { cat: "Device & Endpoint Reports", icon: "💾", name: "Low Disk Space Risk Report", desc: "Devices nearest to full, with owner and totals — proactive storage remediation.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","freeStorageSpaceInBytes","totalStorageSpaceInBytes","lastSyncDateTime","id"]},{"type":"orderby","prop":"freeStorageSpaceInBytes","dir":"asc"},{"type":"top","value":"100"}] },
+  { cat: "Device & Endpoint Reports", icon: "❓", name: "Shared / Kiosk Device Report (no primary user)", desc: "Enrolled devices with no primary user — shared, kiosk and provisioning leftovers.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"userPrincipalName","op":"eq","val":""}],"join":"and"},{"type":"orderby","prop":"enrolledDateTime","dir":"desc"}] },
+  { cat: "Device & Endpoint Reports", icon: "🏢", name: "Corporate vs BYOD Ownership Report", desc: "Corporate-owned fleet with full hardware & compliance — pair with the personal filter for the BYOD split.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"managedDeviceOwnerType","op":"eq","val":"company"}],"join":"and"},{"type":"orderby","prop":"operatingSystem","dir":"asc"}] },
+  { cat: "Device & Endpoint Reports", icon: "🆕", name: "New Enrollment Audit (last 50)", desc: "Most recent enrollments with owner, type and hardware — detect unexpected registrations.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"orderby","prop":"enrolledDateTime","dir":"desc"},{"type":"top","value":"50"}] },
+  { cat: "Device & Endpoint Reports", icon: "🖧", name: "Entra Device Registration Report", desc: "Directory devices — trust type, join type, management, compliance & last sign-in for hybrid/AAD posture.", resId: "devices", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","deviceId","operatingSystem","operatingSystemVersion","accountEnabled","trustType","profileType","deviceOwnership","isCompliant","isManaged","isRooted","managementType","registrationDateTime","approximateLastSignInDateTime","onPremisesSyncEnabled","id"]},{"type":"orderby","prop":"approximateLastSignInDateTime","dir":"desc"}] },
+  { cat: "Device & Endpoint Reports", icon: "👻", name: "Stale Entra Device Cleanup Report", desc: "AAD devices by oldest sign-in with trust/management detail — directory hygiene worklist.", resId: "devices", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","deviceId","operatingSystem","operatingSystemVersion","accountEnabled","trustType","profileType","deviceOwnership","isCompliant","isManaged","isRooted","managementType","registrationDateTime","approximateLastSignInDateTime","onPremisesSyncEnabled","id"]},{"type":"orderby","prop":"approximateLastSignInDateTime","dir":"asc"},{"type":"top","value":"200"}] },
+  { cat: "Device & Endpoint Reports", icon: "🧮", name: "Fleet Size & Platform Mix", desc: "Total managed device count with platform/ownership columns for a quick capacity snapshot.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","operatingSystem","managedDeviceOwnerType","complianceState","id"]},{"type":"count"}] },
+  // ── Compliance & Security Posture Reports ──
+  { cat: "Compliance & Security Posture Reports", icon: "📊", name: "Compliance State Summary Dashboard", desc: "Tenant rollup of compliant / non-compliant / unknown counts — the exec compliance number.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", params: [] },
+  { cat: "Compliance & Security Posture Reports", icon: "⚠", name: "Non-Compliant Device Remediation Report", desc: "Every failing device with owner, OS build, encryption & last sync — the remediation worklist.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","managedDeviceOwnerType","managementAgent","manufacturer","model","serialNumber","isEncrypted","jailBroken","freeStorageSpaceInBytes","totalStorageSpaceInBytes","enrolledDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"complianceState","op":"eq","val":"noncompliant"}],"join":"and"},{"type":"orderby","prop":"lastSyncDateTime","dir":"asc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "⏳", name: "Grace-Period Expiry Report", desc: "Devices in the compliance grace window with expiry date — act before they flip non-compliant.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","complianceState","complianceGracePeriodExpirationDateTime","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"complianceState","op":"eq","val":"inGracePeriod"}],"join":"and"},{"type":"orderby","prop":"complianceGracePeriodExpirationDateTime","dir":"asc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "❔", name: "Unknown-Compliance Investigation Report", desc: "Devices that never reported compliance — owner and last sync to chase down.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","enrolledDateTime","id"]},{"type":"filter","clauses":[{"prop":"complianceState","op":"eq","val":"unknown"}],"join":"and"},{"type":"orderby","prop":"lastSyncDateTime","dir":"asc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "🔓", name: "Encryption Gap Report (BitLocker/FileVault)", desc: "All unencrypted endpoints across platforms with owner & compliance — disk-encryption coverage gap.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","id"]},{"type":"filter","clauses":[{"prop":"isEncrypted","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"operatingSystem","dir":"asc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "📵", name: "Jailbroken / Rooted Device Alert Report", desc: "Any device reporting jailbreak/root with owner & platform — immediate security risk list.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","id"]},{"type":"filter","clauses":[{"prop":"jailBroken","op":"eq","val":"true"}],"join":"and"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "🚨", name: "Open Security Alert Report", desc: "Unresolved alerts across Microsoft security products with severity, category & age.", resId: "securityAlerts", version: "v1.0", method: "GET", params: [{"type":"select","props":["title","severity","status","category","createdDateTime","description"]},{"type":"filter","clauses":[{"prop":"status","op":"ne","val":"resolved"}],"join":"and"},{"type":"orderby","prop":"severity","dir":"desc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "🔥", name: "Active Security Incident Report", desc: "Correlated Defender XDR / Sentinel incidents — severity, status and age for the SOC.", resId: "securityIncidents", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","severity","status","createdDateTime","assignedTo","classification","determination"]},{"type":"filter","clauses":[{"prop":"status","op":"eq","val":"active"}],"join":"and"},{"type":"orderby","prop":"severity","dir":"desc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "📈", name: "Secure Score Posture & Trend", desc: "Historical Secure Score snapshots vs max — chart improvement over time for the board.", resId: "secureScores", version: "v1.0", method: "GET", params: [{"type":"select","props":["currentScore","maxScore","activeUserCount","createdDateTime"]},{"type":"orderby","prop":"createdDateTime","dir":"desc"},{"type":"top","value":"30"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "📋", name: "Secure Score Control Recommendations", desc: "Per-control recommendations, category, max score and service — the hardening backlog.", resId: "custom", version: "v1.0", method: "GET", customPath: "security/secureScoreControlProfiles", params: [{"type":"select","props":["title","controlCategory","maxScore","actionType","service","userImpact","implementationCost"]},{"type":"top","value":"100"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "🦠", name: "Defender Malware Detection Report", desc: "Malware found on managed Windows endpoints with severity, category and last seen.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/windowsMalwareInformation", params: [{"type":"select","props":["displayName","severity","category","state","executionState","lastDetectionDateTime","detectionCount"]},{"type":"orderby","prop":"lastDetectionDateTime","dir":"desc"}] },
+  { cat: "Compliance & Security Posture Reports", icon: "🛰", name: "Threat Defense Connector Posture", desc: "MTD/MDE connector enablement & heartbeat across platforms — coverage assurance.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/mobileThreatDefenseConnectors", params: [{"type":"select","props":["partnerState","lastHeartbeatDateTime","androidEnabled","iosEnabled","windowsEnabled","macEnabled","androidDeviceBlockedOnMissingPartnerData"]}] },
+  // ── Patch & Update Reports ──
+  { cat: "Patch & Update Reports", icon: "🩹", name: "Windows OS Build Currency Report", desc: "Windows devices oldest build first, with owner & last sync — patch/feature-update currency.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","userDisplayName","operatingSystem","osVersion","complianceState","lastSyncDateTime","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"Windows"}],"join":"and"},{"type":"orderby","prop":"osVersion","dir":"asc"}] },
+  { cat: "Patch & Update Reports", icon: "🪟", name: "Windows 10 EOL Migration Report", desc: "Devices still on Windows 10 (10.0.19xxx) with owner — the upgrade-to-11 backlog.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","model","manufacturer","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"Windows"},{"prop":"osVersion","op":"startswith","val":"10.0.19"}],"join":"and"},{"type":"orderby","prop":"deviceName","dir":"asc"}] },
+  { cat: "Patch & Update Reports", icon: "🆕", name: "Windows 11 Adoption Report", desc: "Devices on Windows 11 (10.0.22xxx+) with owner & compliance — rollout progress.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"Windows"},{"prop":"osVersion","op":"startswith","val":"10.0.22"}],"join":"and"},{"type":"orderby","prop":"osVersion","dir":"desc"}] },
+  { cat: "Patch & Update Reports", icon: "📲", name: "Apple OS Currency Report", desc: "iOS/macOS devices oldest build first with owner & model — update-push targeting.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","isEncrypted","jailBroken","managedDeviceOwnerType","managementState","lastSyncDateTime","userDisplayName","model","id"]},{"type":"filter","clauses":[{"prop":"operatingSystem","op":"eq","val":"iOS"},{"prop":"operatingSystem","op":"eq","val":"macOS"}],"join":"or"},{"type":"orderby","prop":"osVersion","dir":"asc"},{"type":"top","value":"200"}] },
+  { cat: "Patch & Update Reports", icon: "✅", name: "Patch Wave Verification Report", desc: "Most-recently-synced devices with build & owner — confirm a patch wave landed.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","userPrincipalName","operatingSystem","osVersion","complianceState","lastSyncDateTime","id"]},{"type":"orderby","prop":"lastSyncDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Patch & Update Reports", icon: "🔁", name: "Quality Update Ring Report", desc: "Windows quality-update (monthly patch) profiles — release, content and timing.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/windowsQualityUpdateProfiles", params: [{"type":"select","props":["displayName","description","releaseDateDisplayName","deployableContentDisplayName","createdDateTime","lastModifiedDateTime"]}] },
+  { cat: "Patch & Update Reports", icon: "⬆", name: "Feature Update Deployment Report", desc: "Windows feature-update (OS version) deployment profiles & rollout settings.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/windowsFeatureUpdateProfiles", params: [{"type":"select","props":["displayName","description","featureUpdateVersion","rolloutSettings","createdDateTime","lastModifiedDateTime"]}] },
+  { cat: "Patch & Update Reports", icon: "🚗", name: "Driver Update Approval Report", desc: "Driver/firmware profiles with approval type & pending counts — what's waiting on you.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/windowsDriverUpdateProfiles", params: [{"type":"select","props":["displayName","description","approvalType","newUpdates","deviceReporting","createdDateTime"]}] },
+  { cat: "Patch & Update Reports", icon: "📦", name: "Software Update Status Summary", desc: "Tenant rollup of update install success / failure / pending.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/softwareUpdateStatusSummary", params: [] },
+  { cat: "Patch & Update Reports", icon: "🔋", name: "Hardware Model Distribution Report", desc: "Fleet grouped by manufacturer/model with OS build — firmware & lifecycle planning.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["manufacturer","model","deviceName","operatingSystem","osVersion","serialNumber","enrolledDateTime","id"]},{"type":"orderby","prop":"model","dir":"asc"}] },
+  // ── Cloud PC & Autopilot Reports ──
+  { cat: "Cloud PC & Autopilot Reports", icon: "☁", name: "Windows 365 Cloud PC Utilization Report", desc: "Every Cloud PC — user, plan, provisioning type, status & last activity for seat utilization.", resId: "cloudPCs", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","managedDeviceName","userPrincipalName","servicePlanName","provisioningType","status","lastModifiedDateTime","gracePeriodEndDateTime"]},{"type":"orderby","prop":"servicePlanName","dir":"asc"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "💤", name: "Idle Cloud PC Reclaim Report", desc: "Least-recently-active Cloud PCs with user & plan — reclaim idle W365 seats.", resId: "cloudPCs", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","servicePlanName","provisioningType","status","lastModifiedDateTime"]},{"type":"orderby","prop":"lastModifiedDateTime","dir":"asc"},{"type":"top","value":"100"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "❌", name: "Cloud PC Provisioning Failure Report", desc: "Failed/grace/provisioning Cloud PCs — the remediation queue.", resId: "cloudPCs", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","servicePlanName","status","lastModifiedDateTime","gracePeriodEndDateTime"]},{"type":"filter","clauses":[{"prop":"status","op":"eq","val":"provisionFailed"},{"prop":"status","op":"eq","val":"inGracePeriod"}],"join":"or"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "📋", name: "Cloud PC Provisioning Policy Report", desc: "W365 provisioning policies — image, network, naming and management.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/virtualEndpoint/provisioningPolicies", params: [{"type":"select","props":["displayName","description","imageDisplayName","imageType","provisioningType","managedBy","domainJoinConfigurations"]}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "🩺", name: "Cloud PC Connection Health Report", desc: "On-prem network connections with health-check status — find failing ANC.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/virtualEndpoint/onPremisesConnections", params: [{"type":"select","props":["displayName","connectionType","adDomainName","healthCheckStatus","healthCheckStatusDetail","subnetId"]}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "📜", name: "Cloud PC Action Audit Report", desc: "W365 audit trail — provision, resize, reprovision actions with actor & result.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/virtualEndpoint/auditEvents", params: [{"type":"select","props":["displayName","activity","activityType","activityResult","activityDateTime","userPrincipalName"]},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "✈", name: "Autopilot Registration Report", desc: "Every Autopilot device — serial, model, group tag, enrollment state & last contact.", resId: "autopilot", version: "v1.0", method: "GET", params: [{"type":"select","props":["serialNumber","manufacturer","model","groupTag","enrollmentState","lastContactedDateTime"]},{"type":"orderby","prop":"groupTag","dir":"asc"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "🏷", name: "Autopilot Readiness Gap Report", desc: "Registered Autopilot devices not yet enrolled or missing a group tag — onboarding blockers.", resId: "autopilot", version: "v1.0", method: "GET", params: [{"type":"select","props":["serialNumber","manufacturer","model","groupTag","enrollmentState","lastContactedDateTime"]},{"type":"filter","clauses":[{"prop":"enrollmentState","op":"eq","val":"notContacted"},{"prop":"groupTag","op":"eq","val":""}],"join":"or"}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "🛫", name: "Autopilot Deployment Profile Report", desc: "OOBE deployment profiles — device type, ESP and OOBE settings.", resId: "custom", version: "beta", method: "GET", customPath: "deviceManagement/windowsAutopilotDeploymentProfiles", params: [{"type":"select","props":["displayName","description","deviceType","enrollmentStatusScreenSettings","outOfBoxExperienceSettings","createdDateTime"]}] },
+  { cat: "Cloud PC & Autopilot Reports", icon: "🔗", name: "Autopilot ↔ Intune Correlation Report", desc: "Intune devices enrolled via Autopilot with serials — match hashes to managed records.", resId: "managedDevices", version: "beta", method: "GET", params: [{"type":"select","props":["deviceName","serialNumber","manufacturer","model","userPrincipalName","deviceEnrollmentType","enrolledDateTime","complianceState","id"]},{"type":"filter","clauses":[{"prop":"deviceEnrollmentType","op":"eq","val":"windowsAutoEnrollment"}],"join":"and"},{"type":"orderby","prop":"enrolledDateTime","dir":"desc"}] },
+  // ── User & Identity Reports ──
+  { cat: "User & Identity Reports", icon: "👥", name: "Full User Directory Export", desc: "Complete user roster with org, contact and account columns — the master directory report.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","jobTitle","department","companyName","officeLocation","city","country","accountEnabled","userType","createdDateTime","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "🧭", name: "Org Chart Report (user + manager)", desc: "Members with their manager joined in via $expand — ready-made reporting-line export.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","jobTitle","department","officeLocation","manager","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "🏢", name: "Department Roster Report", desc: "Members grouped by department with title, manager and location — per-team roster.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["department","displayName","userPrincipalName","jobTitle","officeLocation","manager","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "🧾", name: "HR Attribute Quality Report", desc: "Members with full HR attributes & manager — spot missing department/title/employeeId.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","employeeId","employeeType","jobTitle","department","companyName","manager","officeLocation","city","state","country","accountEnabled","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "👻", name: "Manager-less Member Report", desc: "Active members with no manager set — org-chart and approval-flow gaps.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","department","jobTitle","accountEnabled","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"},{"prop":"accountEnabled","op":"eq","val":"true"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "📞", name: "Contactability Report", desc: "Phone/email/office columns with gaps highlighted — MFA & emergency reachability.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","mobilePhone","businessPhones","officeLocation","city","country","accountEnabled","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "🔗", name: "Hybrid Identity Sync Report", desc: "On-prem-synced accounts with SamAccountName & sync flags — Entra Connect scope review.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","onPremisesSyncEnabled","onPremisesSamAccountName","onPremisesDistinguishedName","department","accountEnabled","lastPasswordChangeDateTime","id"]},{"type":"filter","clauses":[{"prop":"onPremisesSyncEnabled","op":"eq","val":"true"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "☁", name: "Cloud-Only Account Report", desc: "Born-in-cloud accounts (not AD-synced) with created date — shadow-identity review.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","onPremisesSyncEnabled","createdDateTime","department","accountEnabled","userType","id"]},{"type":"filter","clauses":[{"prop":"onPremisesSyncEnabled","op":"ne","val":"true"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  { cat: "User & Identity Reports", icon: "🔑", name: "Stale Password Report", desc: "Members by oldest password change with sync & enabled flags — credential-age risk.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","accountEnabled","userType","lastPasswordChangeDateTime","onPremisesSyncEnabled","createdDateTime","department","signInActivity","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"orderby","prop":"lastPasswordChangeDateTime","dir":"asc"},{"type":"top","value":"200"}] },
+  { cat: "User & Identity Reports", icon: "🆔", name: "Employee Type & ID Audit", desc: "Members with employeeType/employeeId — find contractors and HR-sync gaps.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","employeeType","employeeId","department","jobTitle","accountEnabled","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"orderby","prop":"employeeType","dir":"asc"}] },
+  { cat: "User & Identity Reports", icon: "📊", name: "Account Status Summary", desc: "Member count for capacity & licensing baselines (pair with disabled report).", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","accountEnabled","userType","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"}],"join":"and"},{"type":"count"}] },
+  // ── Lifecycle (JML) Reports ──
+  { cat: "Lifecycle (JML) Reports", icon: "🆕", name: "Joiner Report — New Accounts", desc: "Newest accounts with department, title, manager & enabled state — onboarding verification.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","department","jobTitle","manager","createdDateTime","accountEnabled","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"orderby","prop":"createdDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🚪", name: "Leaver Report — Offboarding Evidence", desc: "Disabled accounts with licenses, manager, sync & password age — the audit package for each exit.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","department","jobTitle","manager","assignedLicenses","accountEnabled","onPremisesSyncEnabled","createdDateTime","lastPasswordChangeDateTime","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"filter","clauses":[{"prop":"accountEnabled","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🪙", name: "Disabled-but-Licensed Reclaim Report", desc: "Blocked accounts still holding licenses with usage location — seats to reclaim now.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","accountEnabled","userType","assignedLicenses","licenseAssignmentStates","usageLocation","department","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"accountEnabled","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🗑", name: "Deleted Users — Restore Window Report", desc: "Soft-deleted users in the 30-day recycle bin with deletion date — restore/cleanup decisions.", resId: "custom", version: "v1.0", method: "GET", customPath: "directory/deletedItems/microsoft.graph.user", params: [{"type":"select","props":["displayName","userPrincipalName","mail","deletedDateTime","userType"]},{"type":"orderby","prop":"deletedDateTime","dir":"desc"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "♻", name: "Deleted Groups — Restore Window Report", desc: "Soft-deleted groups recoverable within 30 days with deletion date.", resId: "custom", version: "v1.0", method: "GET", customPath: "directory/deletedItems/microsoft.graph.group", params: [{"type":"select","props":["displayName","mail","groupTypes","deletedDateTime"]},{"type":"orderby","prop":"deletedDateTime","dir":"desc"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🧹", name: "Dormant Account Candidate Report (beta)", desc: "Enabled accounts with sign-in activity — review for dormancy before disabling.", resId: "users", version: "beta", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","signInActivity","accountEnabled","department","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"accountEnabled","op":"eq","val":"true"}],"join":"and"},{"type":"top","value":"200"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🔄", name: "Lifecycle Workflow Report", desc: "Entra Governance joiner/mover/leaver workflows — category, enablement, scheduling.", resId: "custom", version: "beta", method: "GET", customPath: "identityGovernance/lifecycleWorkflows/workflows", params: [{"type":"select","props":["displayName","description","category","isEnabled","isSchedulingEnabled","lastModifiedDateTime"]}] },
+  { cat: "Lifecycle (JML) Reports", icon: "🧾", name: "Hiring Wave Verification (edit dept)", desc: "Newest accounts in a department with manager & title — confirm a hiring wave landed. Change 'Sales'.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","department","jobTitle","manager","createdDateTime","id"]},{"type":"expand","value":"manager($select=displayName,userPrincipalName,mail,jobTitle)"},{"type":"filter","clauses":[{"prop":"department","op":"eq","val":"Sales"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"},{"type":"top","value":"50"}] },
+  { cat: "Lifecycle (JML) Reports", icon: "📨", name: "Pending B2B Invitation Report", desc: "Guests stuck pending acceptance with invite-change date — chase or revoke.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","externalUserState","externalUserStateChangeDateTime","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"externalUserState","op":"eq","val":"PendingAcceptance"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  // ── Group & Collaboration Reports ──
+  { cat: "Group & Collaboration Reports", icon: "👥", name: "Group Master Inventory", desc: "All groups with type, security/mail flags, visibility, sync & dynamic state — full catalog.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","mail","mailNickname","groupTypes","securityEnabled","mailEnabled","visibility","isAssignableToRole","membershipRuleProcessingState","onPremisesSyncEnabled","classification","createdDateTime","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Group & Collaboration Reports", icon: "👑", name: "Group Ownership Report", desc: "Groups with owners joined via $expand — find orphaned (owner-less) groups.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","mail","groupTypes","visibility","securityEnabled","owners","id"]},{"type":"expand","value":"owners($select=displayName,userPrincipalName)"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Group & Collaboration Reports", icon: "🌐", name: "Public M365 Group Exposure Report", desc: "Unified groups set to public with mail & created — open-content governance review.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","mail","description","visibility","groupTypes","createdDateTime","classification","id"]},{"type":"filter","clauses":[{"prop":"groupTypes","op":"eq","val":"Unified"},{"prop":"visibility","op":"eq","val":"Public"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  { cat: "Group & Collaboration Reports", icon: "⚡", name: "Dynamic Group Rule Report", desc: "Dynamic groups with their membershipRule & processing state — rule audit.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","membershipRule","membershipRuleProcessingState","groupTypes","securityEnabled","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"membershipRuleProcessingState","op":"eq","val":"On"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Group & Collaboration Reports", icon: "🛡", name: "Role-Assignable (Privileged) Group Report", desc: "Groups that can hold admin roles with owners — high-value access review.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","isAssignableToRole","securityEnabled","visibility","owners","createdDateTime","id"]},{"type":"expand","value":"owners($select=displayName,userPrincipalName)"},{"type":"filter","clauses":[{"prop":"isAssignableToRole","op":"eq","val":"true"}],"join":"and"}] },
+  { cat: "Group & Collaboration Reports", icon: "🆕", name: "Group Sprawl Report (newest)", desc: "Most-recently-created groups with type & visibility — self-service sprawl watch.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","groupTypes","visibility","securityEnabled","mailEnabled","createdDateTime","id"]},{"type":"orderby","prop":"createdDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Group & Collaboration Reports", icon: "⏳", name: "Group Expiration & Renewal Report", desc: "Unified groups with expiration/renewal dates — lifecycle-policy review.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","mail","expirationDateTime","renewedDateTime","createdDateTime","groupTypes","visibility","id"]},{"type":"orderby","prop":"expirationDateTime","dir":"asc"}] },
+  { cat: "Group & Collaboration Reports", icon: "📬", name: "Distribution & Mail Group Report", desc: "Mail-enabled groups (DLs & mail-enabled security) with addresses — Exchange recipient governance.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","mail","mailNickname","mailEnabled","securityEnabled","groupTypes","visibility","id"]},{"type":"filter","clauses":[{"prop":"mailEnabled","op":"eq","val":"true"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Group & Collaboration Reports", icon: "👥", name: "Teams Inventory Report", desc: "Org-wide Teams with description, visibility and archive state.", resId: "custom", version: "v1.0", method: "GET", customPath: "teams", params: [{"type":"select","props":["displayName","description","visibility","isArchived","createdDateTime"]},{"type":"top","value":"100"}] },
+  { cat: "Group & Collaboration Reports", icon: "🧹", name: "Group Hygiene Report (no description)", desc: "Groups missing a description with type & created — naming/governance cleanup.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","groupTypes","visibility","securityEnabled","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"description","op":"eq","val":""}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  // ── Privileged Access & Role Reports ──
+  { cat: "Privileged Access & Role Reports", icon: "👑", name: "Privileged Role Membership Report", desc: "Active directory roles with their members joined via $expand — the admin recert export.", resId: "directoryRoles", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","roleTemplateId","members"]},{"type":"expand","value":"members($select=displayName,userPrincipalName,accountEnabled)"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Privileged Access & Role Reports", icon: "⏱", name: "PIM Eligible Assignment Report", desc: "Standing eligibility — who can elevate to which role and over what scope, with windows.", resId: "custom", version: "v1.0", method: "GET", customPath: "roleManagement/directory/roleEligibilityScheduleInstances", params: [{"type":"select","props":["principalId","roleDefinitionId","directoryScopeId","memberType","startDateTime","endDateTime"]},{"type":"orderby","prop":"startDateTime","dir":"desc"}] },
+  { cat: "Privileged Access & Role Reports", icon: "✅", name: "PIM Active Assignment Report", desc: "Currently active (elevated) role assignments with type & expiry — standing-access review.", resId: "custom", version: "v1.0", method: "GET", customPath: "roleManagement/directory/roleAssignmentScheduleInstances", params: [{"type":"select","props":["principalId","roleDefinitionId","directoryScopeId","assignmentType","memberType","startDateTime","endDateTime"]},{"type":"orderby","prop":"endDateTime","dir":"asc"}] },
+  { cat: "Privileged Access & Role Reports", icon: "📨", name: "PIM Activation Request Report", desc: "Recent PIM activation/assignment requests with action & status — elevation audit.", resId: "custom", version: "v1.0", method: "GET", customPath: "roleManagement/directory/roleAssignmentScheduleRequests", params: [{"type":"select","props":["action","principalId","roleDefinitionId","status","createdDateTime","justification"]},{"type":"orderby","prop":"createdDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Privileged Access & Role Reports", icon: "📜", name: "Permanent Assignment Risk Report", desc: "Active assignments flagged permanent (no end date) — eliminate standing admin access.", resId: "custom", version: "v1.0", method: "GET", customPath: "roleManagement/directory/roleAssignmentScheduleInstances", params: [{"type":"select","props":["principalId","roleDefinitionId","assignmentType","memberType","startDateTime","endDateTime"]},{"type":"filter","clauses":[{"prop":"assignmentType","op":"eq","val":"Assigned"}],"join":"and"},{"type":"orderby","prop":"startDateTime","dir":"asc"}] },
+  { cat: "Privileged Access & Role Reports", icon: "🛠", name: "Custom Role Definition Report", desc: "Tenant custom directory roles with enablement — least-privilege design review.", resId: "roleDefinitions", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","isBuiltIn","isEnabled","version"]},{"type":"filter","clauses":[{"prop":"isBuiltIn","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Privileged Access & Role Reports", icon: "🏛", name: "Administrative Unit Report", desc: "AUs with membership type & visibility — delegated-admin boundary review.", resId: "custom", version: "v1.0", method: "GET", customPath: "directory/administrativeUnits", params: [{"type":"select","props":["displayName","description","membershipType","membershipRule","visibility"]}] },
+  { cat: "Privileged Access & Role Reports", icon: "🪪", name: "Tenant Authorization Policy Report", desc: "Default user permissions, guest access & self-service settings — baseline posture.", resId: "custom", version: "v1.0", method: "GET", customPath: "policies/authorizationPolicy", params: [] },
+  { cat: "Privileged Access & Role Reports", icon: "🛡", name: "Security Defaults State Report", desc: "Whether Entra security defaults are enabled — quick posture check.", resId: "custom", version: "v1.0", method: "GET", customPath: "policies/identitySecurityDefaultsEnforcementPolicy", params: [] },
+  // ── Application & Consent Reports ──
+  { cat: "Application & Consent Reports", icon: "🔑", name: "App Secret & Certificate Expiry Audit", desc: "App registrations with credentials & owners joined — rotate before secrets/certs expire.", resId: "applications", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","signInAudience","publisherDomain","createdDateTime","identifierUris","tags","notes","keyCredentials","passwordCredentials","owners","id"]},{"type":"expand","value":"owners($select=displayName,userPrincipalName)"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Application & Consent Reports", icon: "🌐", name: "Multi-Tenant App Exposure Report", desc: "Any-tenant sign-in apps with credentials & publisher — external-exposure review.", resId: "applications", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","signInAudience","publisherDomain","createdDateTime","identifierUris","tags","notes","keyCredentials","passwordCredentials","id"]},{"type":"filter","clauses":[{"prop":"signInAudience","op":"eq","val":"AzureADMultipleOrgs"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  { cat: "Application & Consent Reports", icon: "🗑", name: "Stale App Registration Report", desc: "Oldest apps first with credentials — likely-abandoned apps with rotting secrets.", resId: "applications", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","signInAudience","publisherDomain","createdDateTime","identifierUris","tags","notes","keyCredentials","passwordCredentials","id"]},{"type":"orderby","prop":"createdDateTime","dir":"asc"},{"type":"top","value":"100"}] },
+  { cat: "Application & Consent Reports", icon: "📤", name: "Public-Client App Report", desc: "Apps configured as public/native clients — token-handling risk review.", resId: "applications", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","isFallbackPublicClient","signInAudience","publisherDomain","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"isFallbackPublicClient","op":"eq","val":"true"}],"join":"and"}] },
+  { cat: "Application & Consent Reports", icon: "🏭", name: "Enterprise App Inventory", desc: "All service principals — type, owner org, SSO mode & enablement for the app catalog.", resId: "servicePrincipals", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","accountEnabled","servicePrincipalType","appOwnerOrganizationId","preferredSingleSignOnMode","loginUrl","replyUrls","homepage","tags","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Application & Consent Reports", icon: "🔐", name: "SSO-Configured App Report", desc: "Enterprise apps with an SSO mode & login/reply URLs — SSO estate audit.", resId: "servicePrincipals", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","preferredSingleSignOnMode","loginUrl","replyUrls","homepage","accountEnabled","id"]},{"type":"filter","clauses":[{"prop":"preferredSingleSignOnMode","op":"ne","val":""}],"join":"and"},{"type":"orderby","prop":"preferredSingleSignOnMode","dir":"asc"}] },
+  { cat: "Application & Consent Reports", icon: "🤖", name: "Managed Identity Report", desc: "System/user-assigned managed identities — non-human credential inventory.", resId: "servicePrincipals", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","servicePrincipalType","accountEnabled","appOwnerOrganizationId","id"]},{"type":"filter","clauses":[{"prop":"servicePrincipalType","op":"eq","val":"ManagedIdentity"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Application & Consent Reports", icon: "🤝", name: "OAuth Delegated Consent Report", desc: "All delegated permission grants — client, resource, consent type & scopes for consent-risk review.", resId: "custom", version: "v1.0", method: "GET", customPath: "oauth2PermissionGrants", params: [{"type":"select","props":["clientId","resourceId","consentType","principalId","scope"]},{"type":"top","value":"300"}] },
+  { cat: "Application & Consent Reports", icon: "🌍", name: "Tenant-Wide Consent Risk Report", desc: "Admin (AllPrincipals) consents — org-wide delegated scopes granted to apps.", resId: "custom", version: "v1.0", method: "GET", customPath: "oauth2PermissionGrants", params: [{"type":"select","props":["clientId","resourceId","consentType","scope"]},{"type":"filter","clauses":[{"prop":"consentType","op":"eq","val":"AllPrincipals"}],"join":"and"},{"type":"top","value":"300"}] },
+  { cat: "Application & Consent Reports", icon: "🚫", name: "Disabled Enterprise App Report", desc: "SPs with sign-in disabled — verify before cleanup.", resId: "servicePrincipals", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","appId","accountEnabled","servicePrincipalType","tags","id"]},{"type":"filter","clauses":[{"prop":"accountEnabled","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  // ── Conditional Access & Auth Reports ──
+  { cat: "Conditional Access & Auth Reports", icon: "🔒", name: "Conditional Access Coverage Report", desc: "Every CA policy with state, conditions, grant & session controls — full coverage export.", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","state","conditions","grantControls","sessionControls","createdDateTime","modifiedDateTime","id"]},{"type":"orderby","prop":"state","dir":"asc"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "⚠", name: "CA Change-Drift Report", desc: "CA policies by most-recently-modified — detect unauthorized policy edits.", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","state","createdDateTime","modifiedDateTime","id"]},{"type":"orderby","prop":"modifiedDateTime","dir":"desc"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "📊", name: "Report-Only Policy Pipeline", desc: "Policies in report-only mode awaiting promotion to enforced.", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","state","conditions","grantControls","sessionControls","createdDateTime","modifiedDateTime","id"]},{"type":"filter","clauses":[{"prop":"state","op":"eq","val":"enabledForReportingButNotEnforced"}],"join":"and"},{"type":"orderby","prop":"modifiedDateTime","dir":"desc"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "📍", name: "Named Location Report", desc: "Trusted/untrusted IP & country named locations referenced by CA.", resId: "namedLocations", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","createdDateTime","modifiedDateTime"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "📊", name: "MFA / Passwordless Readiness Report", desc: "Per-user registration detail — MFA, passwordless & SSPR capability. Sort any column to find gaps.", resId: "custom", version: "v1.0", method: "GET", customPath: "reports/authenticationMethods/userRegistrationDetails", params: [{"type":"select","props":["userPrincipalName","userDisplayName","isAdmin","isMfaRegistered","isMfaCapable","isPasswordlessCapable","isSsprRegistered","isSsprCapable","methodsRegistered","defaultMfaMethod"]},{"type":"top","value":"500"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "👑", name: "Admin MFA Assurance Report", desc: "Registration detail with the isAdmin flag first — sort that column to isolate privileged accounts and confirm every admin is MFA-strong.", resId: "custom", version: "v1.0", method: "GET", customPath: "reports/authenticationMethods/userRegistrationDetails", params: [{"type":"select","props":["isAdmin","userPrincipalName","userDisplayName","isMfaRegistered","isMfaCapable","isPasswordlessCapable","methodsRegistered","defaultMfaMethod"]},{"type":"top","value":"500"}] },
+  { cat: "Conditional Access & Auth Reports", icon: "🛡", name: "Authentication Methods Policy Report", desc: "Tenant policy — which methods (FIDO2, Authenticator, SMS, TAP) are enabled & targeted.", resId: "custom", version: "v1.0", method: "GET", customPath: "policies/authenticationMethodsPolicy", params: [] },
+  { cat: "Conditional Access & Auth Reports", icon: "🔐", name: "Authentication Strength Report", desc: "Built-in & custom authentication strengths used by CA grant controls.", resId: "custom", version: "v1.0", method: "GET", customPath: "policies/authenticationStrengthPolicies", params: [{"type":"select","props":["displayName","description","policyType","requirementsSatisfied","allowedCombinations"]}] },
+  { cat: "Conditional Access & Auth Reports", icon: "🧮", name: "CA Policy Count & States", desc: "CA policies with state for a quick enabled/report-only/disabled tally.", resId: "conditionalAccessPolicies", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","state","id"]},{"type":"count"}] },
+  // ── Sign-in & Risk Forensics Reports ──
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🔑", name: "Interactive Sign-in Forensics", desc: "Latest interactive sign-ins with full forensic columns — user, app, IP, status, CA, device, location.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"top","value":"100"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "❌", name: "Failed Sign-in Investigation", desc: "Non-zero error-code sign-ins with full context — auth-failure and spray hunting.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion","status/errorCode","status/failureReason"]},{"type":"filter","clauses":[{"prop":"status/errorCode","op":"ne","val":"0"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🚧", name: "CA-Blocked Sign-in Report", desc: "Sign-ins denied by Conditional Access — coverage impact and false-positive review.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"conditionalAccessStatus","op":"eq","val":"failure"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "📟", name: "Legacy Auth Sign-in Report", desc: "Basic/legacy-auth client sign-ins — the block-legacy-auth target list.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"clientAppUsed","op":"eq","val":"Other clients"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "⚠", name: "Risky Sign-in Report", desc: "Sign-ins flagged medium/high risk in real time with location & device.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"riskLevelDuringSignIn","op":"eq","val":"high"},{"prop":"riskLevelDuringSignIn","op":"eq","val":"medium"}],"join":"or"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🕵", name: "User Sign-in Trail (edit UPN)", desc: "Full sign-in history for one user — change the userPrincipalName. Incident timeline.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"userPrincipalName","op":"eq","val":"user@contoso.com"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🌐", name: "Suspicious IP Investigation (edit)", desc: "All sign-ins from one IP across users — change the ipAddress. Lateral-movement hunting.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"ipAddress","op":"eq","val":"1.2.3.4"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🗺", name: "Geo Anomaly Report (edit country)", desc: "Sign-ins from a country with city/device — impossible-travel & geo-fencing review.", resId: "signIns", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","appDisplayName","createdDateTime","ipAddress","status","conditionalAccessStatus","clientAppUsed","isInteractive","riskLevelDuringSignIn","riskState","deviceDetail/operatingSystem","deviceDetail/browser","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"location/countryOrRegion","op":"eq","val":"US"}],"join":"and"},{"type":"top","value":"150"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "⚡", name: "Risky User Remediation Report", desc: "All flagged users with risk level, state & detail — the Identity Protection worklist.", resId: "riskyUsers", version: "v1.0", method: "GET", params: [{"type":"select","props":["userDisplayName","userPrincipalName","riskLevel","riskState","riskDetail","riskLastUpdatedDateTime","id"]},{"type":"orderby","prop":"riskLastUpdatedDateTime","dir":"desc"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "💧", name: "Leaked-Credential Detection Report", desc: "Leaked-credential risk events with user, IP & location — force-reset queue.", resId: "riskDetections", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","riskEventType","riskLevel","riskState","riskDetail","detectedDateTime","activity","ipAddress","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"riskEventType","op":"eq","val":"leakedCredentials"}],"join":"and"},{"type":"orderby","prop":"detectedDateTime","dir":"desc"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🧳", name: "Impossible-Travel Detection Report", desc: "Atypical/impossible-travel detections with locations — geo-anomaly investigations.", resId: "riskDetections", version: "v1.0", method: "GET", params: [{"type":"select","props":["userPrincipalName","userDisplayName","riskEventType","riskLevel","riskState","riskDetail","detectedDateTime","activity","ipAddress","location/city","location/countryOrRegion"]},{"type":"filter","clauses":[{"prop":"riskEventType","op":"eq","val":"unlikelyTravel"},{"prop":"riskEventType","op":"eq","val":"impossibleTravel"}],"join":"or"},{"type":"orderby","prop":"detectedDateTime","dir":"desc"}] },
+  { cat: "Sign-in & Risk Forensics Reports", icon: "🔄", name: "Provisioning (SCIM) Sync Report", desc: "App provisioning events with source/target & status — SCIM sync health.", resId: "custom", version: "v1.0", method: "GET", customPath: "auditLogs/provisioningLogs", params: [{"type":"select","props":["activityDateTime","sourceSystem","targetSystem","action","provisioningAction","provisioningStatusInfo","durationInMilliseconds"]},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  // ── Licensing & Adoption Reports ──
+  { cat: "Licensing & Adoption Reports", icon: "🪪", name: "License Inventory & Availability", desc: "Every SKU with consumed vs total seats & status — the license true-up report.", resId: "subscribedSkus", version: "v1.0", method: "GET", params: [{"type":"select","props":["skuPartNumber","skuId","consumedUnits","prepaidUnits","capabilityStatus","appliesTo"]}] },
+  { cat: "Licensing & Adoption Reports", icon: "👤", name: "Per-User License Assignment Report", desc: "All users with assigned SKUs, assignment states & usage location — entitlement export.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","accountEnabled","userType","assignedLicenses","licenseAssignmentStates","usageLocation","department","createdDateTime","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "🪙", name: "License Reclaim Report (disabled+licensed)", desc: "Blocked users still holding licenses — immediate seat recovery.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","accountEnabled","userType","assignedLicenses","licenseAssignmentStates","usageLocation","department","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"accountEnabled","op":"eq","val":"false"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "🌍", name: "Licensing Blocker Report (no usage location)", desc: "Accounts missing usageLocation — can't be licensed until fixed.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","usageLocation","assignedLicenses","accountEnabled","department","id"]},{"type":"filter","clauses":[{"prop":"usageLocation","op":"eq","val":""}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "🧾", name: "License Assignment Error Report", desc: "Users whose license assignment is in an error state — provisioning failures.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","licenseAssignmentStates","assignedLicenses","usageLocation","accountEnabled","id"]},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "📭", name: "Unlicensed Active Member Report", desc: "Enabled members with no licenses — under-provisioned staff.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","assignedLicenses","department","jobTitle","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Member"},{"prop":"accountEnabled","op":"eq","val":"true"}],"join":"and"},{"type":"orderby","prop":"department","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "🌐", name: "Guest License Consumption Report", desc: "Guests consuming licenses — unexpected external entitlement.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","userType","assignedLicenses","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Guest"}],"join":"and"},{"type":"orderby","prop":"displayName","dir":"asc"}] },
+  { cat: "Licensing & Adoption Reports", icon: "💳", name: "Commercial Subscription Report", desc: "Directory subscriptions with seats, trial flag & next lifecycle date — renewal planning.", resId: "custom", version: "beta", method: "GET", customPath: "directory/subscriptions", params: [{"type":"select","props":["skuPartNumber","status","totalLicenses","isTrial","nextLifecycleDateTime","createdDateTime"]}] },
+  { cat: "Licensing & Adoption Reports", icon: "📊", name: "MFA/SSPR Adoption Report", desc: "Combined registration readiness across the tenant — security-feature adoption metric.", resId: "custom", version: "v1.0", method: "GET", customPath: "reports/authenticationMethods/userRegistrationDetails", params: [{"type":"select","props":["userPrincipalName","isMfaRegistered","isMfaCapable","isSsprRegistered","isSsprCapable","isPasswordlessCapable","methodsRegistered"]},{"type":"top","value":"500"}] },
+  // ── Audit & Change-Tracking Reports ──
+  { cat: "Audit & Change-Tracking Reports", icon: "📋", name: "Directory Change Audit (latest)", desc: "Newest audit entries across all services with actor, target & result — full change feed.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"150"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "👑", name: "Privileged Role Change Audit", desc: "Role-management audit entries — who granted/activated which admin role.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"category","op":"eq","val":"RoleManagement"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "🔒", name: "CA Policy Change Audit", desc: "Policy-category audit entries — Conditional Access create/modify/delete trail.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"category","op":"eq","val":"Policy"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "🤝", name: "App Consent Audit Report", desc: "Consent-to-application events — risky OAuth consent hunting with actor & target.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"activityDisplayName","op":"startswith","val":"Consent to application"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "👤", name: "User Management Audit", desc: "Add/update/delete user operations with actor & target — provisioning trail.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"category","op":"eq","val":"UserManagement"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "👥", name: "Group Membership Change Audit", desc: "Add/remove member events across groups — access-grant trail.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"category","op":"eq","val":"GroupManagement"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "🔑", name: "Password Reset Audit", desc: "SSPR & admin password resets with actor & result — helpdesk/compliance evidence.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"activityDisplayName","op":"startswith","val":"Reset password"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "❌", name: "Failed Operation Audit", desc: "Audit entries with a failure result and reason — error and abuse hunting.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"result","op":"eq","val":"failure"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  { cat: "Audit & Change-Tracking Reports", icon: "🌐", name: "B2B Invitation Audit", desc: "Guest invite & redemption events with actor & target — external-access trail.", resId: "directoryAudits", version: "v1.0", method: "GET", params: [{"type":"select","props":["activityDisplayName","category","result","resultReason","activityDateTime","loggedByService","initiatedBy","targetResources","correlationId"]},{"type":"filter","clauses":[{"prop":"activityDisplayName","op":"startswith","val":"Invite external user"}],"join":"and"},{"type":"orderby","prop":"activityDateTime","dir":"desc"},{"type":"top","value":"100"}] },
+  // ── Governance & Recertification Reports ──
+  { cat: "Governance & Recertification Reports", icon: "🌐", name: "Guest Access Recertification Report", desc: "All guests with state, invite age, licenses & enablement — periodic external-access review.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","userType","externalUserState","accountEnabled","assignedLicenses","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Guest"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"asc"}] },
+  { cat: "Governance & Recertification Reports", icon: "🧹", name: "Oldest-Guest Cleanup Report", desc: "Longest-standing guests first — recertify or remove stale external accounts.", resId: "users", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","userPrincipalName","mail","externalUserState","accountEnabled","createdDateTime","id"]},{"type":"filter","clauses":[{"prop":"userType","op":"eq","val":"Guest"}],"join":"and"},{"type":"orderby","prop":"createdDateTime","dir":"asc"},{"type":"top","value":"150"}] },
+  { cat: "Governance & Recertification Reports", icon: "📊", name: "Access Review Status Report", desc: "All access-review schedules with status & description — governance program health.", resId: "custom", version: "v1.0", method: "GET", customPath: "identityGovernance/accessReviews/definitions", params: [{"type":"select","props":["displayName","status","createdDateTime","descriptionForAdmins","scope"]},{"type":"orderby","prop":"createdDateTime","dir":"desc"}] },
+  { cat: "Governance & Recertification Reports", icon: "📦", name: "Access Package Catalog Report", desc: "Self-service access packages with visibility & created — entitlement catalog.", resId: "custom", version: "v1.0", method: "GET", customPath: "identityGovernance/entitlementManagement/accessPackages", params: [{"type":"select","props":["displayName","description","isHidden","createdDateTime","modifiedDateTime"]}] },
+  { cat: "Governance & Recertification Reports", icon: "🎫", name: "Access Package Assignment Report", desc: "Active access-package assignments to users — who has what entitlement.", resId: "custom", version: "v1.0", method: "GET", customPath: "identityGovernance/entitlementManagement/assignments", params: [{"type":"select","props":["id","assignmentState","assignmentStatus","targetId","accessPackageId"]},{"type":"top","value":"150"}] },
+  { cat: "Governance & Recertification Reports", icon: "📜", name: "Terms of Use Acceptance Report", desc: "ToU agreements & acceptance requirements — compliance attestation config.", resId: "custom", version: "v1.0", method: "GET", customPath: "identityGovernance/termsOfUse/agreements", params: [{"type":"select","props":["displayName","isViewingBeforeAcceptanceRequired","isPerDeviceAcceptanceRequired","userReacceptRequiredFrequency"]}] },
+  { cat: "Governance & Recertification Reports", icon: "🔐", name: "Cross-Tenant Access Policy Report", desc: "Default & partner-specific B2B/B2B-direct collaboration settings — external-trust posture.", resId: "custom", version: "v1.0", method: "GET", customPath: "policies/crossTenantAccessPolicy", params: [] },
+  { cat: "Governance & Recertification Reports", icon: "👑", name: "Privileged Group Recert Report", desc: "Role-assignable groups with owners — recertify who controls admin-capable groups.", resId: "groups", version: "v1.0", method: "GET", params: [{"type":"select","props":["displayName","description","isAssignableToRole","visibility","owners","createdDateTime","id"]},{"type":"expand","value":"owners($select=displayName,userPrincipalName)"},{"type":"filter","clauses":[{"prop":"isAssignableToRole","op":"eq","val":"true"}],"join":"and"}] },
+  // ── Admin Actions (writes) ──
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Disable a user (block sign-in)", desc: "PATCH accountEnabled:false. Edit the id; confirm before sending.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"accountEnabled\": false\n}", inverse: {"label":"Enable user","method":"PATCH","customPath":"users/USER-OBJECT-ID","body":"{\n  \"accountEnabled\": true\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Enable a user (allow sign-in)", desc: "PATCH accountEnabled:true. Edit the id.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"accountEnabled\": true\n}", inverse: {"label":"Disable user","method":"PATCH","customPath":"users/USER-OBJECT-ID","body":"{\n  \"accountEnabled\": false\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Update user department / title", desc: "PATCH user attributes. Edit id and values.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"department\": \"IT\",\n  \"jobTitle\": \"Engineer\"\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Force password change next sign-in", desc: "PATCH passwordProfile. Edit id + temp password.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"passwordProfile\": {\n    \"forceChangePasswordNextSignIn\": true,\n    \"password\": \"Temp-Pass-Change-Me!\"\n  }\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Revoke a user's sessions", desc: "POST revokeSignInSessions — invalidates refresh tokens. Edit id.", resId: "custom", version: "v1.0", method: "POST", customPath: "users/USER-OBJECT-ID/revokeSignInSessions", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Create a user", desc: "POST a new member account. Edit all values.", resId: "custom", version: "v1.0", method: "POST", customPath: "users", params: [], body: "{\n  \"accountEnabled\": true,\n  \"displayName\": \"New User\",\n  \"mailNickname\": \"newuser\",\n  \"userPrincipalName\": \"newuser@contoso.com\",\n  \"passwordProfile\": {\n    \"forceChangePasswordNextSignIn\": true,\n    \"password\": \"Temp-Pass-Change-Me!\"\n  }\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Delete a user", desc: "DELETE a user (recoverable 30 days). Edit id.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "users/USER-OBJECT-ID", params: [], inverse: {"label":"Restore deleted user","method":"POST","customPath":"directory/deletedItems/USER-OBJECT-ID/restore","body":"{}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Assign a license to a user", desc: "POST assignLicense. Edit skuId + user id.", resId: "custom", version: "v1.0", method: "POST", customPath: "users/USER-OBJECT-ID/assignLicense", params: [], body: "{\n  \"addLicenses\": [ { \"skuId\": \"SKU-GUID-HERE\", \"disabledPlans\": [] } ],\n  \"removeLicenses\": []\n}", inverse: {"label":"Remove that license","method":"POST","customPath":"users/USER-OBJECT-ID/assignLicense","body":"{\n  \"addLicenses\": [],\n  \"removeLicenses\": [ \"SKU-GUID-HERE\" ]\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Remove a license from a user", desc: "POST assignLicense with removeLicenses. Edit ids.", resId: "custom", version: "v1.0", method: "POST", customPath: "users/USER-OBJECT-ID/assignLicense", params: [], body: "{\n  \"addLicenses\": [],\n  \"removeLicenses\": [ \"SKU-GUID-HERE\" ]\n}", inverse: {"label":"Re-assign that license","method":"POST","customPath":"users/USER-OBJECT-ID/assignLicense","body":"{\n  \"addLicenses\": [ { \"skuId\": \"SKU-GUID-HERE\", \"disabledPlans\": [] } ],\n  \"removeLicenses\": []\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Set user usage location", desc: "PATCH usageLocation so a license can be assigned.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"usageLocation\": \"US\"\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Create a security group", desc: "POST a mail-disabled security group.", resId: "custom", version: "v1.0", method: "POST", customPath: "groups", params: [], body: "{\n  \"displayName\": \"GRP-New-Security\",\n  \"mailEnabled\": false,\n  \"mailNickname\": \"grpNewSecurity\",\n  \"securityEnabled\": true\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Delete a group", desc: "DELETE a group. Edit id.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "groups/GROUP-OBJECT-ID", params: [], inverse: {"label":"Restore deleted group","method":"POST","customPath":"directory/deletedItems/GROUP-OBJECT-ID/restore","body":"{}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Add member to a group", desc: "POST member $ref. Edit group id + user id.", resId: "custom", version: "v1.0", method: "POST", customPath: "groups/GROUP-OBJECT-ID/members/$ref", params: [], body: "{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/USER-OBJECT-ID\"\n}", inverse: {"label":"Remove that member","method":"DELETE","customPath":"groups/GROUP-OBJECT-ID/members/USER-OBJECT-ID/$ref"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Remove member from a group", desc: "DELETE a member by id. Edit ids.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "groups/GROUP-OBJECT-ID/members/USER-OBJECT-ID/$ref", params: [], inverse: {"label":"Add that member back","method":"POST","customPath":"groups/GROUP-OBJECT-ID/members/$ref","body":"{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/USER-OBJECT-ID\"\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Add owner to a group", desc: "POST owner $ref. Edit ids.", resId: "custom", version: "v1.0", method: "POST", customPath: "groups/GROUP-OBJECT-ID/owners/$ref", params: [], body: "{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/users/USER-OBJECT-ID\"\n}", inverse: {"label":"Remove that owner","method":"DELETE","customPath":"groups/GROUP-OBJECT-ID/owners/USER-OBJECT-ID/$ref"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Retire device (Intune)", desc: "POST retire — removes company data. Edit id.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/retire", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Wipe device (Intune)", desc: "POST wipe — factory reset. Destructive. Edit id + flags.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/wipe", params: [], body: "{\n  \"keepEnrollmentData\": false,\n  \"keepUserData\": false\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Sync device (Intune)", desc: "POST syncDevice — force a check-in. Edit id.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/syncDevice", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Reboot device now (Intune)", desc: "POST rebootNow — restarts the endpoint. Edit id.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/rebootNow", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Remote lock device (Intune)", desc: "POST remoteLock — locks the device. Edit id.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/remoteLock", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Delete device (Intune)", desc: "DELETE a managed device record. Edit id.", resId: "custom", version: "beta", method: "DELETE", customPath: "deviceManagement/managedDevices/DEVICE-ID", params: [] },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Rotate BitLocker keys (Intune)", desc: "POST rotateBitLockerKeys — new recovery keys. Edit id.", resId: "custom", version: "beta", method: "POST", customPath: "deviceManagement/managedDevices/DEVICE-ID/rotateBitLockerKeys", params: [], body: "{}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Dismiss risky user", desc: "POST dismiss — clears Identity Protection risk. Edit id.", resId: "custom", version: "v1.0", method: "POST", customPath: "identityProtection/riskyUsers/dismiss", params: [], body: "{\n  \"userIds\": [ \"USER-OBJECT-ID\" ]\n}", inverse: {"label":"Confirm compromised","method":"POST","customPath":"identityProtection/riskyUsers/confirmCompromised","body":"{\n  \"userIds\": [ \"USER-OBJECT-ID\" ]\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Confirm user compromised", desc: "POST confirmCompromised — escalates to high risk. Edit id.", resId: "custom", version: "v1.0", method: "POST", customPath: "identityProtection/riskyUsers/confirmCompromised", params: [], body: "{\n  \"userIds\": [ \"USER-OBJECT-ID\" ]\n}", inverse: {"label":"Dismiss risk","method":"POST","customPath":"identityProtection/riskyUsers/dismiss","body":"{\n  \"userIds\": [ \"USER-OBJECT-ID\" ]\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Enable a Conditional Access policy", desc: "PATCH state → enabled. Edit policy id.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "identity/conditionalAccess/policies/POLICY-ID", params: [], body: "{\n  \"state\": \"enabled\"\n}", inverse: {"label":"Disable policy","method":"PATCH","customPath":"identity/conditionalAccess/policies/POLICY-ID","body":"{\n  \"state\": \"disabled\"\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Disable a Conditional Access policy", desc: "PATCH state → disabled. Edit policy id.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "identity/conditionalAccess/policies/POLICY-ID", params: [], body: "{\n  \"state\": \"disabled\"\n}", inverse: {"label":"Enable policy","method":"PATCH","customPath":"identity/conditionalAccess/policies/POLICY-ID","body":"{\n  \"state\": \"enabled\"\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Disable an enterprise app (SP)", desc: "PATCH accountEnabled:false on a service principal. Edit id.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "servicePrincipals/SP-OBJECT-ID", params: [], body: "{\n  \"accountEnabled\": false\n}", inverse: {"label":"Enable app","method":"PATCH","customPath":"servicePrincipals/SP-OBJECT-ID","body":"{\n  \"accountEnabled\": true\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Delete an app registration", desc: "DELETE an application (recoverable 30 days). Edit id.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "applications/APP-OBJECT-ID", params: [], inverse: {"label":"Restore deleted app","method":"POST","customPath":"directory/deletedItems/APP-OBJECT-ID/restore","body":"{}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Add a client secret to an app", desc: "POST addPassword — generates a new client secret. Edit id.", resId: "custom", version: "v1.0", method: "POST", customPath: "applications/APP-OBJECT-ID/addPassword", params: [], body: "{\n  \"passwordCredential\": { \"displayName\": \"added-by-graphbuilder\" }\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Reset a user's MFA (delete method)", desc: "DELETE a registered auth method. Edit user id + method id.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "users/USER-OBJECT-ID/authentication/microsoftAuthenticatorMethods/METHOD-ID", params: [] },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Create a Temporary Access Pass", desc: "POST a TAP for passwordless onboarding. Edit user id.", resId: "custom", version: "v1.0", method: "POST", customPath: "users/USER-OBJECT-ID/authentication/temporaryAccessPassMethods", params: [], body: "{\n  \"lifetimeInMinutes\": 60,\n  \"isUsableOnce\": false\n}" },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Add member to a directory role", desc: "POST role member $ref (grant admin). Edit ids.", resId: "custom", version: "v1.0", method: "POST", customPath: "directoryRoles/ROLE-OBJECT-ID/members/$ref", params: [], body: "{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/USER-OBJECT-ID\"\n}", inverse: {"label":"Remove that member","method":"DELETE","customPath":"directoryRoles/ROLE-OBJECT-ID/members/USER-OBJECT-ID/$ref"} },
+  { cat: "Admin Actions (writes)", icon: "⚠⚠", name: "Remove member from a directory role", desc: "DELETE a role member (revoke admin). Edit ids.", resId: "custom", version: "v1.0", method: "DELETE", customPath: "directoryRoles/ROLE-OBJECT-ID/members/USER-OBJECT-ID/$ref", params: [], inverse: {"label":"Add that member back","method":"POST","customPath":"directoryRoles/ROLE-OBJECT-ID/members/$ref","body":"{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/USER-OBJECT-ID\"\n}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Archive a team", desc: "POST archive on a team. Edit team id.", resId: "custom", version: "v1.0", method: "POST", customPath: "teams/TEAM-OBJECT-ID/archive", params: [], body: "{}", inverse: {"label":"Unarchive team","method":"POST","customPath":"teams/TEAM-OBJECT-ID/unarchive","body":"{}"} },
+  { cat: "Admin Actions (writes)", icon: "⚠", name: "Convert a guest to a member", desc: "PATCH userType → Member. Edit id.", resId: "custom", version: "v1.0", method: "PATCH", customPath: "users/USER-OBJECT-ID", params: [], body: "{\n  \"userType\": \"Member\"\n}", inverse: {"label":"Convert back to guest","method":"PATCH","customPath":"users/USER-OBJECT-ID","body":"{\n  \"userType\": \"Guest\"\n}"} },
 ];
+
+const TEMPLATE_CATS = [
+  "Device & Endpoint Reports",
+  "Compliance & Security Posture Reports",
+  "Patch & Update Reports",
+  "Cloud PC & Autopilot Reports",
+  "User & Identity Reports",
+  "Lifecycle (JML) Reports",
+  "Group & Collaboration Reports",
+  "Privileged Access & Role Reports",
+  "Application & Consent Reports",
+  "Conditional Access & Auth Reports",
+  "Sign-in & Risk Forensics Reports",
+  "Licensing & Adoption Reports",
+  "Audit & Change-Tracking Reports",
+  "Governance & Recertification Reports",
+  "Admin Actions (writes)",
+];
+
+const ROW_ACTIONS = {
+  "users": [
+    {
+      "label": "Disable sign-in",
+      "method": "PATCH",
+      "path": "users/{id}",
+      "body": "{\n  \"accountEnabled\": false\n}"
+    },
+    {
+      "label": "Enable sign-in",
+      "method": "PATCH",
+      "path": "users/{id}",
+      "body": "{\n  \"accountEnabled\": true\n}"
+    },
+    {
+      "label": "Revoke sessions",
+      "method": "POST",
+      "path": "users/{id}/revokeSignInSessions",
+      "body": "{}"
+    },
+    {
+      "label": "Force password reset",
+      "method": "PATCH",
+      "path": "users/{id}",
+      "body": "{\n  \"passwordProfile\": { \"forceChangePasswordNextSignIn\": true, \"password\": \"Temp-Pass-Change-Me!\" }\n}"
+    },
+    {
+      "label": "Delete user",
+      "method": "DELETE",
+      "path": "users/{id}",
+      "danger": true
+    }
+  ],
+  "groups": [
+    {
+      "label": "Delete group",
+      "method": "DELETE",
+      "path": "groups/{id}",
+      "danger": true
+    },
+    {
+      "label": "Add a member…",
+      "method": "POST",
+      "path": "groups/{id}/members/$ref",
+      "body": "{\n  \"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/USER-OBJECT-ID\"\n}"
+    }
+  ],
+  "managedDevices": [
+    {
+      "label": "Sync now",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/syncDevice",
+      "body": "{}",
+      "version": "beta"
+    },
+    {
+      "label": "Reboot now",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/rebootNow",
+      "body": "{}",
+      "version": "beta"
+    },
+    {
+      "label": "Remote lock",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/remoteLock",
+      "body": "{}",
+      "version": "beta"
+    },
+    {
+      "label": "Rotate BitLocker keys",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/rotateBitLockerKeys",
+      "body": "{}",
+      "version": "beta"
+    },
+    {
+      "label": "Retire",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/retire",
+      "body": "{}",
+      "version": "beta",
+      "danger": true
+    },
+    {
+      "label": "Wipe",
+      "method": "POST",
+      "path": "deviceManagement/managedDevices/{id}/wipe",
+      "body": "{\n  \"keepEnrollmentData\": false,\n  \"keepUserData\": false\n}",
+      "version": "beta",
+      "danger": true
+    },
+    {
+      "label": "Delete record",
+      "method": "DELETE",
+      "path": "deviceManagement/managedDevices/{id}",
+      "version": "beta",
+      "danger": true
+    }
+  ],
+  "devices": [
+    {
+      "label": "Disable device",
+      "method": "PATCH",
+      "path": "devices/{id}",
+      "body": "{\n  \"accountEnabled\": false\n}"
+    },
+    {
+      "label": "Enable device",
+      "method": "PATCH",
+      "path": "devices/{id}",
+      "body": "{\n  \"accountEnabled\": true\n}"
+    },
+    {
+      "label": "Delete device",
+      "method": "DELETE",
+      "path": "devices/{id}",
+      "danger": true
+    }
+  ],
+  "applications": [
+    {
+      "label": "Add client secret",
+      "method": "POST",
+      "path": "applications/{id}/addPassword",
+      "body": "{\n  \"passwordCredential\": { \"displayName\": \"added-by-graphbuilder\" }\n}"
+    },
+    {
+      "label": "Delete app",
+      "method": "DELETE",
+      "path": "applications/{id}",
+      "danger": true
+    }
+  ],
+  "servicePrincipals": [
+    {
+      "label": "Disable app",
+      "method": "PATCH",
+      "path": "servicePrincipals/{id}",
+      "body": "{\n  \"accountEnabled\": false\n}"
+    },
+    {
+      "label": "Enable app",
+      "method": "PATCH",
+      "path": "servicePrincipals/{id}",
+      "body": "{\n  \"accountEnabled\": true\n}"
+    }
+  ],
+  "riskyUsers": [
+    {
+      "label": "Dismiss risk",
+      "method": "POST",
+      "path": "identityProtection/riskyUsers/dismiss",
+      "body": "{\n  \"userIds\": [ \"{id}\" ]\n}"
+    },
+    {
+      "label": "Confirm compromised",
+      "method": "POST",
+      "path": "identityProtection/riskyUsers/confirmCompromised",
+      "body": "{\n  \"userIds\": [ \"{id}\" ]\n}",
+      "danger": true
+    }
+  ],
+  "conditionalAccessPolicies": [
+    {
+      "label": "Enable policy",
+      "method": "PATCH",
+      "path": "identity/conditionalAccess/policies/{id}",
+      "body": "{\n  \"state\": \"enabled\"\n}"
+    },
+    {
+      "label": "Disable policy",
+      "method": "PATCH",
+      "path": "identity/conditionalAccess/policies/{id}",
+      "body": "{\n  \"state\": \"disabled\"\n}"
+    },
+    {
+      "label": "Report-only",
+      "method": "PATCH",
+      "path": "identity/conditionalAccess/policies/{id}",
+      "body": "{\n  \"state\": \"enabledForReportingButNotEnforced\"\n}"
+    }
+  ]
+};
 
 const OPS = [
   { id: "eq", label: "equals", adv: false },
@@ -948,7 +1341,9 @@ function GraphBlocks() {
   const [respStatus, setRespStatus] = useState(null);
   const [reqTab, setReqTab] = useState("headers");
   const [resTab, setResTab] = useState("preview");
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState(() => LS.get(LS_KEYS.history, []));
+  const [saved, setSaved] = useState(() => LS.get(LS_KEYS.saved, []));
+  const [pinned, setPinned] = useState(() => LS.get(LS_KEYS.pinned, []));
   const [discoveredProps, setDiscoveredProps] = useState([]);
   const [error, setError] = useState(null);
   const [neededScopes, setNeededScopes] = useState([]);
@@ -971,7 +1366,16 @@ function GraphBlocks() {
   const [customPath, setCustomPath] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [histOpen, setHistOpen] = useState(false);
+  const [histTab, setHistTab] = useState("history");
   const [signInModal, setSignInModal] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiKey, setAiKey] = useState(() => LS.get(LS_KEYS.aikey, ""));
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [templOpen, setTemplOpen] = useState(false);
+  const [templSearch, setTemplSearch] = useState("");
+  const [templCat, setTemplCat] = useState("all");
 
   // relationship navigation: jump to {resource}/{id}/{relationship} as a fresh query
   const navigateRelationship = (rel) => {
@@ -998,6 +1402,154 @@ function GraphBlocks() {
   const url = `https://graph.microsoft.com/${version}/${path}${objectId ? "" : query}`;
 
   const betaWarn = res.betaOnly && version === "v1.0";
+
+  // ── persist history, saved queries & pinned resources across sessions ──
+  useEffect(() => { LS.set(LS_KEYS.history, history); }, [history]);
+  useEffect(() => { LS.set(LS_KEYS.saved, saved); }, [saved]);
+  useEffect(() => { LS.set(LS_KEYS.pinned, pinned); }, [pinned]);
+
+  // load a saved/history snapshot back into the builder
+  const loadSnapshot = (h) => {
+    setMethod(h.method);
+    setVersion(h.version);
+    setResourceId(h.resourceId || "custom");
+    setObjectId(h.objectId || "");
+    if (h.customPath != null) setCustomPath(h.customPath);
+    setParams(h.params ? JSON.parse(JSON.stringify(h.params)) : []);
+    setChainPath(h.chainPath || "");
+    if (h.chainLimit) setChainLimit(h.chainLimit);
+    setEditing(null);
+  };
+
+  // save the current query for one-click reuse later
+  const saveCurrentQuery = () => {
+    const def = resourceId !== "custom" && res.label ? res.label : (customPath.trim() || res.path);
+    const name = typeof window !== "undefined" ? window.prompt("Name this saved query:", `${method} · ${def}`) : null;
+    if (name == null) return; // cancelled
+    const entry = {
+      id: Date.now(), name: name.trim() || def, at: Date.now(), url,
+      method, version, resourceId, objectId, customPath,
+      params: JSON.parse(JSON.stringify(params)), chainPath, chainLimit,
+    };
+    setSaved((prev) => [entry, ...prev].slice(0, 100));
+    setHistTab("saved");
+  };
+  const removeSaved = (id) => setSaved((prev) => prev.filter((s) => s.id !== id));
+
+  // pin / unpin a resource to the top of the resource pickers
+  const togglePin = (id) =>
+    setPinned((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  // ── AI: natural language → query ─────────────────────────────
+  async function callAI() {
+    if (!aiText.trim() || !aiKey.trim()) return;
+    setAiLoading(true);
+    setAiError(null);
+    const catalog = RESOURCES.map((r) => `  ${r.id}: ${r.label} → ${r.path}`).join("\n");
+    const systemPrompt = `You are a Microsoft Graph API expert. Translate the user's plain-English description into a Graph Builder query by calling the build_graph_query tool.
+
+Preset resources (use the id as resourceId):
+${catalog}
+
+For paths not in the list, use resourceId="custom" and set customPath to the Graph path (e.g. "me/drive/root/children").
+
+Param shapes:
+• select  → { type:"select", props:["field1","field2"] }
+• filter  → { type:"filter", join:"and", clauses:[{prop:"complianceState",op:"eq",val:"noncompliant"}] }
+           valid ops: eq, ne, gt, lt, ge, le, startswith, contains
+• top     → { type:"top", value:"50" }
+• orderby → { type:"orderby", prop:"displayName", dir:"asc" }
+• count   → { type:"count" }
+• expand  → { type:"expand", value:"members" }
+
+Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protection. Use "v1.0" for everything else stable.`;
+
+    const tool = {
+      name: "build_graph_query",
+      description: "Build a Microsoft Graph API query from the user's natural language description",
+      input_schema: {
+        type: "object",
+        properties: {
+          method: { type: "string", enum: ["GET","POST","PATCH","DELETE"] },
+          version: { type: "string", enum: ["v1.0","beta"] },
+          resourceId: { type: "string", description: "id from the preset list, or 'custom'" },
+          customPath: { type: "string", description: "Graph path when resourceId is 'custom'" },
+          objectId: { type: "string", description: "GUID to fetch a single object" },
+          params: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["select","filter","top","orderby","count","expand"] },
+                props: { type: "array", items: { type: "string" } },
+                value: { type: "string" },
+                join: { type: "string", enum: ["and","or"] },
+                clauses: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      prop: { type: "string" },
+                      op: { type: "string", enum: ["eq","ne","gt","lt","ge","le","startswith","contains"] },
+                      val: { type: "string" }
+                    },
+                    required: ["prop","op","val"]
+                  }
+                },
+                prop: { type: "string" },
+                dir: { type: "string", enum: ["asc","desc"] }
+              },
+              required: ["type"]
+            }
+          },
+          chainPath: { type: "string" },
+          chainLimit: { type: "number" }
+        },
+        required: ["method","version","resourceId"]
+      }
+    };
+
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": aiKey.trim(),
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
+          system: systemPrompt,
+          tools: [tool],
+          tool_choice: { type: "tool", name: "build_graph_query" },
+          messages: [{ role: "user", content: aiText.trim() }],
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Anthropic API error ${resp.status}`);
+      }
+      const data = await resp.json();
+      const toolUse = data.content?.find((b) => b.type === "tool_use");
+      if (!toolUse?.input) throw new Error("No query returned — try rephrasing your description.");
+      const snap = toolUse.input;
+      if (!snap.resourceId) snap.resourceId = "custom";
+      if (snap.resourceId !== "custom" && !RESOURCES.find((r) => r.id === snap.resourceId)) {
+        snap.customPath = snap.customPath || snap.resourceId;
+        snap.resourceId = "custom";
+      }
+      if (!snap.params) snap.params = [];
+      loadSnapshot(snap);
+      setAiOpen(false);
+      setAiText("");
+    } catch (e) {
+      setAiError(e.message);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   // resolve the least-privilege scope this query needs
   const SCOPE_BY_PREFIX = [
@@ -1421,32 +1973,12 @@ function GraphBlocks() {
               ) : (
                 <>
                   <div className="mt-3 mb-4">
-                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.dim, marginBottom: 8 }}>Starter templates — click to load</div>
-                    <div className="grid grid-cols-2 gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                      {TEMPLATES.map((t) => (
-                        <button
-                          key={t.name}
-                          onClick={() => {
-                            setMethod(t.method);
-                            setVersion(t.version);
-                            setResourceId(t.resId);
-                            setObjectId("");
-                            setParams(t.params.map((p, i) => ({ ...p, id: Date.now() + i })));
-                            setEditing(null);
-                          }}
-                          className="text-left px-3 py-2.5 rounded-lg"
-                          style={{ background: C.panel, border: `1px solid ${C.line}` }}
-                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.resource; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span style={{ fontSize: 14 }}>{t.icon}</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{t.name}</span>
-                          </div>
-                          <div style={{ fontSize: 10.5, color: C.dim, marginTop: 3 }}>{t.desc}</div>
-                        </button>
-                      ))}
-                    </div>
+                    <button
+                      onClick={() => { setTemplOpen(true); setEditing(null); }}
+                      style={{ ...ghostBtn(C.resource), width: "100%", padding: "10px 14px", fontSize: 13 }}
+                    >
+                      📋 Browse {TEMPLATES.length} reports & actions — Devices · Identity · Security · Governance ›
+                    </button>
                   </div>
                   <p className="text-xs mt-2 mb-1" style={{ color: C.dim }}>Resources available — expand a group to drill in, or search above.</p>
                   <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 340, overflowY: "auto" }}>
@@ -1742,7 +2274,21 @@ function GraphBlocks() {
               Learn mode {learn ? "on" : "off"}
             </button>
             <button
-              onClick={() => { setHistOpen(!histOpen); setHelpOpen(false); }}
+              onClick={() => { setTemplOpen(!templOpen); setAiOpen(false); setHistOpen(false); setHelpOpen(false); }}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: templOpen ? hexA(C.resource, 0.14) : "transparent", color: templOpen ? C.resource : C.dim, border: `1px solid ${templOpen ? hexA(C.resource, 0.4) : C.line}` }}
+            >
+              📋 Templates
+            </button>
+            <button
+              onClick={() => { setAiOpen(!aiOpen); setTemplOpen(false); setHistOpen(false); setHelpOpen(false); setAiError(null); }}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: aiOpen ? hexA(C.resource, 0.14) : "transparent", color: aiOpen ? C.resource : C.dim, border: `1px solid ${aiOpen ? hexA(C.resource, 0.4) : C.line}` }}
+            >
+              ✨ AI
+            </button>
+            <button
+              onClick={() => { setHistOpen(!histOpen); setHelpOpen(false); setAiOpen(false); }}
               className="transition-colors"
               style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}` }}
             >
@@ -1778,44 +2324,201 @@ function GraphBlocks() {
         {histOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }} onClick={() => setHistOpen(false)}>
             <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700, margin: "0 auto", marginTop: 60, background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, maxHeight: "70vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
-              <div className="flex items-center gap-2.5">
-                <span style={{ width: 3, height: 13, borderRadius: 2, background: C.resource, display: "inline-block" }} />
-                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>Query history</h2>
+              <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3 pb-2.5" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
+                <div className="flex items-center gap-1">
+                  {[{ id: "history", label: `History${history.length ? ` (${history.length})` : ""}` }, { id: "saved", label: `★ Saved${saved.length ? ` (${saved.length})` : ""}` }].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setHistTab(t.id)}
+                      style={{ padding: "5px 12px", borderRadius: 7, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em", background: histTab === t.id ? hexA(C.resource, 0.14) : "transparent", color: histTab === t.id ? C.resource : C.dim, border: `1px solid ${histTab === t.id ? hexA(C.resource, 0.4) : "transparent"}`, cursor: "pointer" }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {histTab === "history" && history.length > 0 && <button onClick={() => setHistory([])} style={ghostBtn()}>Clear</button>}
               </div>
-              {history.length > 0 && <button onClick={() => setHistory([])} style={ghostBtn()}>Clear</button>}
-            </div>
-            <div className="px-3 py-2" style={{ maxHeight: 260, overflowY: "auto" }}>
-              {history.length === 0 ? (
-                <p className="text-xs px-1 py-3" style={{ color: C.dim }}>Queries you run will appear here — click one to load it back into the builder.</p>
-              ) : history.map((h) => (
-                <button
-                  key={h.at}
-                  onClick={() => {
-                    setMethod(h.method);
-                    setVersion(h.version);
-                    setResourceId(h.resourceId || "custom");
-                    setObjectId(h.objectId || "");
-                    if (h.customPath) setCustomPath(h.customPath);
-                    setParams(h.params ? JSON.parse(JSON.stringify(h.params)) : []);
-                    setChainPath(h.chainPath || "");
-                    if (h.chainLimit) setChainLimit(h.chainLimit);
-                    setEditing(null);
-                    setHistOpen(false);
-                  }}
-                  className="w-full text-left px-2 py-1.5 rounded flex items-center gap-2"
-                  onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 700, color: h.method === "GET" ? C.method : C.danger, flexShrink: 0, width: 42 }}>{h.method}</span>
-                  <span style={{ fontSize: 11.5, fontFamily: MONO, color: C.text, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.url.replace("https://graph.microsoft.com/", "")}</span>
-                  <span style={{ fontSize: 10, color: C.dim, flexShrink: 0 }}>{new Date(h.at).toLocaleTimeString()}</span>
-                </button>
-              ))}
-            </div>
+              <div className="px-3 py-2" style={{ overflowY: "auto", minHeight: 0 }}>
+                {histTab === "history" ? (
+                  history.length === 0 ? (
+                    <p className="text-xs px-1 py-3" style={{ color: C.dim }}>Queries you run will appear here — click one to load it back into the builder. Kept across refreshes on this browser.</p>
+                  ) : history.map((h) => (
+                    <button
+                      key={h.at}
+                      onClick={() => { loadSnapshot(h); setHistOpen(false); }}
+                      className="w-full text-left px-2 py-1.5 rounded flex items-center gap-2"
+                      onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      <span style={{ fontSize: 10, fontWeight: 700, color: h.method === "GET" ? C.method : C.danger, flexShrink: 0, width: 42 }}>{h.method}</span>
+                      <span style={{ fontSize: 11.5, fontFamily: MONO, color: C.text, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.url.replace("https://graph.microsoft.com/", "")}</span>
+                      <span style={{ fontSize: 10, color: C.dim, flexShrink: 0 }}>{new Date(h.at).toLocaleTimeString()}</span>
+                    </button>
+                  ))
+                ) : (
+                  saved.length === 0 ? (
+                    <p className="text-xs px-1 py-3" style={{ color: C.dim }}>No saved queries yet. Build a query, then hit <b style={{ color: C.resource }}>★ Save</b> (next to Run) to keep it here for one-click reuse.</p>
+                  ) : saved.map((s) => (
+                    <div
+                      key={s.id}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded"
+                      onMouseEnter={(e) => e.currentTarget.style.background = C.panel}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      <button
+                        onClick={() => { loadSnapshot(s); setHistOpen(false); }}
+                        className="text-left flex items-center gap-2"
+                        style={{ flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                      >
+                        <span style={{ fontSize: 10, fontWeight: 700, color: s.method === "GET" ? C.method : C.danger, flexShrink: 0, width: 42 }}>{s.method}</span>
+                        <span className="flex flex-col" style={{ minWidth: 0 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+                          <span style={{ fontSize: 10.5, fontFamily: MONO, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(s.url || "").replace("https://graph.microsoft.com/", "")}</span>
+                        </span>
+                      </button>
+                      <button onClick={() => removeSaved(s.id)} title="Delete saved query" style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 4, fontSize: 13, lineHeight: 1, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, cursor: "pointer" }}>×</button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}
+
+        {aiOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }} onClick={() => { setAiOpen(false); setAiError(null); }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580, margin: "0 auto", marginTop: 80, background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, padding: 24 }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 18 }}>✨</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Describe a query</span>
+                </div>
+                <button onClick={() => { setAiOpen(false); setAiError(null); }} style={ghostBtn()}>Close</button>
+              </div>
+              <textarea
+                value={aiText}
+                onChange={(e) => setAiText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) callAI(); }}
+                placeholder={"Describe what you need, e.g.:\n\"Get all Windows devices in Intune, show device name, OS version, last sync, filter to non-compliant\"\n\"List guest users with display name and email\"\n\"Top 25 sign-ins sorted by date\""}
+                rows={5}
+                className="w-full"
+                style={{ ...field(), resize: "vertical", marginBottom: 12 }}
+                autoFocus
+              />
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="password"
+                  value={aiKey}
+                  onChange={(e) => { setAiKey(e.target.value); LS.set(LS_KEYS.aikey, e.target.value); }}
+                  placeholder="Claude API key (sk-ant-…) — stored in this browser only"
+                  className="flex-1"
+                  style={{ ...field(), fontSize: 12 }}
+                />
+                <a
+                  href="https://console.anthropic.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...ghostBtn(C.param), textDecoration: "none", whiteSpace: "nowrap", fontSize: 11 }}
+                >
+                  Get key →
+                </a>
+              </div>
+              {aiError && <p style={{ ...callout(C.danger), marginBottom: 10, fontSize: 11.5 }}>{aiError}</p>}
+              <button
+                onClick={callAI}
+                disabled={aiLoading || !aiText.trim() || !aiKey.trim()}
+                style={{ ...primaryBtn(hexA(C.resource, aiLoading || !aiText.trim() || !aiKey.trim() ? 0.3 : 1)), cursor: aiLoading || !aiText.trim() || !aiKey.trim() ? "default" : "pointer" }}
+              >
+                {aiLoading ? "Building query…" : "✨ Build query  ⌘↵"}
+              </button>
+              <p style={{ fontSize: 10.5, color: C.dim, marginTop: 10, lineHeight: 1.5 }}>
+                Powered by Claude Haiku (Anthropic). Your key is stored only in this browser's localStorage and sent only to Anthropic's API.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {templOpen && (() => {
+          const visibleTemplates = TEMPLATES.filter(t =>
+            (templCat === "all" || t.cat === templCat) &&
+            (!templSearch.trim() || (t.name + " " + t.desc).toLowerCase().includes(templSearch.toLowerCase()))
+          );
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 40 }} onClick={() => setTemplOpen(false)}>
+              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 860, margin: "0 auto", marginTop: 50, background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {/* Header */}
+                <div className="flex items-center justify-between gap-2 px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
+                  <div className="flex items-center gap-2.5">
+                    <span style={{ width: 3, height: 13, borderRadius: 2, background: C.resource, display: "inline-block" }} />
+                    <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>
+                      📋 Reports & Actions ({visibleTemplates.length}/{TEMPLATES.length})
+                    </h2>
+                  </div>
+                  <button onClick={() => setTemplOpen(false)} style={ghostBtn()}>Close</button>
+                </div>
+                {/* Search + category pills */}
+                <div className="px-5 py-3" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
+                  <input
+                    value={templSearch}
+                    onChange={(e) => setTemplSearch(e.target.value)}
+                    placeholder="Search templates…"
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.line}`, background: C.panel, color: C.text, fontSize: 13, marginBottom: 10, outline: "none" }}
+                  />
+                  <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+                    {["all", ...TEMPLATE_CATS].map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setTemplCat(cat)}
+                        style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: templCat === cat ? hexA(C.resource, 0.18) : C.panel,
+                          color: templCat === cat ? C.resource : C.dim,
+                          border: `1px solid ${templCat === cat ? hexA(C.resource, 0.5) : C.line}` }}
+                      >
+                        {cat === "all" ? "All" : cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Template cards grid */}
+                <div style={{ overflowY: "auto", padding: "14px 20px" }}>
+                  {visibleTemplates.length === 0 ? (
+                    <p style={{ color: C.dim, fontSize: 13, textAlign: "center", padding: "20px 0" }}>No templates match your search.</p>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {visibleTemplates.map((t) => (
+                        <button
+                          key={t.name}
+                          className="text-left"
+                          onClick={() => {
+                            setMethod(t.method);
+                            setVersion(t.version);
+                            setResourceId(t.resId);
+                            if (t.customPath != null) setCustomPath(t.customPath);
+                            setObjectId("");
+                            setBody(t.body != null ? t.body : "{\n  \n}");
+                            setParams(t.params.map((p, i) => ({ ...p, id: Date.now() + i })));
+                            setEditing(null);
+                            setTemplOpen(false);
+                          }}
+                          style={{ padding: "10px 12px", borderRadius: 10, background: C.panel, border: `1px solid ${C.line}`, cursor: "pointer", transition: "border-color 0.12s" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.resource; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; }}
+                        >
+                          <div className="flex items-center gap-2" style={{ marginBottom: 3 }}>
+                            <span style={{ fontSize: 15 }}>{t.icon}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{t.name}</span>
+                          </div>
+                          <div style={{ fontSize: 10, color: C.resource, fontWeight: 600, marginBottom: 3 }}>{t.cat}</div>
+                          <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{t.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {helpOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }} onClick={() => setHelpOpen(false)}>
@@ -1855,12 +2558,26 @@ function GraphBlocks() {
                 title="Quickly switch resource"
               >
                 <option value="custom">{getPathIndex(version) ? "🔍 Search every Graph path…" : "Custom path…"}</option>
+                {pinned.length > 0 && (
+                  <optgroup label="★ Pinned">
+                    {pinned.map((id) => { const r = RESOURCES.find((x) => x.id === id); return r ? <option key={id} value={id}>{r.label}{r.betaOnly ? " (β)" : ""}</option> : null; })}
+                  </optgroup>
+                )}
                 {CATEGORIES.map((c) => (
                   <optgroup key={c.name} label={c.name}>
                     {c.ids.map((id) => { const r = RESOURCES.find((x) => x.id === id); return <option key={id} value={id}>{r.label}{r.betaOnly ? " (β)" : ""}</option>; })}
                   </optgroup>
                 ))}
               </select>
+              {resourceId !== "custom" && (
+                <button
+                  onClick={() => togglePin(resourceId)}
+                  title={pinned.includes(resourceId) ? "Unpin this resource" : "Pin this resource to the top of the list"}
+                  style={{ ...ghostBtn(pinned.includes(resourceId) ? C.method : null), padding: "5px 9px", fontSize: 13, lineHeight: 1 }}
+                >
+                  {pinned.includes(resourceId) ? "★" : "☆"}
+                </button>
+              )}
               <button
                 onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
                 style={ghostBtn()}
@@ -1888,6 +2605,9 @@ function GraphBlocks() {
               options={[
                 ...(getPathIndex(version)
                   ? [{ group: `All Microsoft Graph — ${getPathIndex(version).length.toLocaleString()} ${version} paths`, items: [{ v: "custom", l: "🔍 Search every Graph path…" }] }]
+                  : []),
+                ...(pinned.length
+                  ? [{ group: "★ Pinned", items: pinned.map((id) => { const r = RESOURCES.find((x) => x.id === id); return r ? { v: id, l: r.label + (r.betaOnly ? " (β)" : "") } : null; }).filter(Boolean) }]
                   : []),
                 ...CATEGORIES.map((c) => ({
                   group: c.name,
@@ -2025,6 +2745,13 @@ function GraphBlocks() {
           </div>
           <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
             <CopyBtn text={url} />
+            <button
+              onClick={saveCurrentQuery}
+              style={{ ...ghostBtn(C.resource), padding: "5px 12px", fontSize: 12 }}
+              title="Save this query to reuse later"
+            >
+              ★ Save
+            </button>
             <button
               onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
               style={{ ...ghostBtn(), padding: "5px 12px", fontSize: 12 }}
