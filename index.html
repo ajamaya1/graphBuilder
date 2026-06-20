@@ -58,7 +58,7 @@ input,select,textarea,button{font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
 // ── localStorage persistence (history, saved queries, pinned resources) ──
 const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1", aikeyOpenAI: "gb.aikey.openai.v1", aiprovider: "gb.aiprovider.v1", modelAnthropic: "gb.model.anthropic.v1", modelOpenAI: "gb.model.openai.v1" };
@@ -147,6 +147,26 @@ const OPENAI_MODELS = [
   ["o4-mini", "o4-mini · reasoning"],
   ["gpt-4o-mini", "GPT-4o mini · fastest"],
 ];
+// minimal SSE reader for streaming responses — yields parsed JSON from each `data:` line
+async function* sseEvents(resp) {
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line.startsWith("data:")) {
+        const payload = line.slice(5).trim();
+        if (payload && payload !== "[DONE]") { try { yield JSON.parse(payload); } catch {} }
+      }
+    }
+  }
+}
 
 // ── shared control styles (single source of truth) ──────────
 const field = (extra) => ({
@@ -1461,6 +1481,7 @@ function GraphBlocks() {
   const [aiKeyOpenAI, setAiKeyOpenAI] = useState(() => LS.get(LS_KEYS.aikeyOpenAI, ""));
   const [modelAnthropic, setModelAnthropic] = useState(() => LS.get(LS_KEYS.modelAnthropic, ASST_MODEL));
   const [modelOpenAI, setModelOpenAI] = useState(() => LS.get(LS_KEYS.modelOpenAI, OPENAI_MODEL));
+  const asstAbortRef = useRef(null);
   const [templOpen, setTemplOpen] = useState(false);
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
@@ -2019,6 +2040,41 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     }
   }
 
+  // follow @odata.nextLink repeatedly, accumulating all pages into the current result (capped for safety)
+  async function loadAllPages() {
+    if (!nextLink || running) return;
+    setRunning(true); setError(null);
+    const base = result || {};
+    try {
+      const bearer = await getBearer(queryScope);
+      if (!bearer) throw new Error("Couldn't acquire a token — try signing in again.");
+      const headers = { Authorization: `Bearer ${bearer}` };
+      if (consistencyOn) headers["ConsistencyLevel"] = "eventual";
+      customHeaders.forEach((h) => { if (h.key.trim()) headers[h.key.trim()] = h.value; });
+      let link = nextLink;
+      let acc = Array.isArray(base.value) ? [...base.value] : [];
+      let pages = 0; const MAX_PAGES = 50;
+      while (link && pages < MAX_PAGES) {
+        const r = await fetch(link, { headers });
+        if (r.status === 429) { await new Promise((res) => setTimeout(res, (parseInt(r.headers.get("Retry-After") || "2", 10)) * 1000)); continue; }
+        let d = null; try { d = JSON.parse(await r.text()); } catch { d = {}; }
+        if (!r.ok) throw new Error(d?.error?.message || `HTTP ${r.status}`);
+        if (Array.isArray(d?.value)) acc = acc.concat(d.value);
+        link = d?.["@odata.nextLink"] || null;
+        pages++;
+        setNextLink(link);
+        setChainProgress(`${acc.length} rows`);
+        setResult({ ...base, value: acc, "@graphbuilder.pages": `${acc.length} rows loaded across ${pages} extra page(s)${link ? " — more available" : ""}` });
+        await new Promise((res) => setTimeout(res, 60)); // gentle pacing
+      }
+      if (link) setNotice(`Stopped after ${MAX_PAGES} pages (${acc.length} rows). Click "Load all pages" again to keep going.`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRunning(false); setChainProgress(null);
+    }
+  }
+
   // ── reversible: load a follow-up write action (optionally targeting one result row's id) ──
   function applyAction(act, idVal) {
     const id = idVal != null && idVal !== "" ? String(idVal) : "OBJECT-ID";
@@ -2143,10 +2199,22 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     const text = await resp.text();
     let data = null; try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
     if (!resp.ok) return { ok: false, status: resp.status, url, error: data?.error?.message || data?.Message || `HTTP ${resp.status}` };
-    // trim to keep tokens sane: cap the value array and surface the count
-    const rows = Array.isArray(data?.value) ? data.value : null;
-    const trimmed = rows ? { ...data, value: rows.slice(0, 25), "@graphbuilder.returned": `${rows.length} rows (showing ${Math.min(25, rows.length)})` } : data;
-    return { ok: true, status: resp.status, url, data: trimmed };
+    let rows = Array.isArray(data?.value) ? data.value : null;
+    if (rows) {
+      // auto-paginate so the model sees true counts (capped to keep tokens + time sane)
+      let link = data["@odata.nextLink"]; let pages = 0;
+      while (link && rows.length < 1000 && pages < 10) {
+        const nr = await fetch(link, { method: "GET", headers });
+        if (!nr.ok) break;
+        let nd = null; try { nd = JSON.parse(await nr.text()); } catch { break; }
+        if (Array.isArray(nd?.value)) rows = rows.concat(nd.value);
+        link = nd?.["@odata.nextLink"] || null; pages++;
+      }
+      const trimmed = { ...data, value: rows.slice(0, 25), "@graphbuilder.returned": `${rows.length}${link ? "+" : ""} rows (showing ${Math.min(25, rows.length)})` };
+      delete trimmed["@odata.nextLink"];
+      return { ok: true, status: resp.status, url, data: trimmed };
+    }
+    return { ok: true, status: resp.status, url, data };
   }
 
   // tool both providers expose — same JSON schema for Anthropic input_schema and OpenAI parameters
@@ -2222,34 +2290,49 @@ Param shapes for run_graph_query params[]:
 • expand  → { "type":"expand", "value":"manager($select=displayName)" }
 
 Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protection; "v1.0" otherwise. Be concise. When you run a query, summarize what came back rather than pasting raw JSON.`;
+    const ctrl = new AbortController();
+    asstAbortRef.current = ctrl;
+    const toolDesc = "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.";
+    let liveText = "";
     try {
       for (let hop = 0; hop < 8; hop++) {
-        let assistantText = "", calls = [];
+        liveText = "";
+        let calls = [];
+        // show an empty assistant bubble that fills in as tokens stream
+        setAsstMsgs([...turns, { role: "assistant", text: "", calls: [] }]);
         if (provider === "anthropic") {
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
+            method: "POST", signal: ctrl.signal,
             headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-            body: JSON.stringify({ model, max_tokens: 2048, system, tools: [{ name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", input_schema: ASST_TOOL_SCHEMA }], messages: toAnthropicMsgs(turns) }),
+            body: JSON.stringify({ model, max_tokens: 2048, stream: true, system, tools: [{ name: "run_graph_query", description: toolDesc, input_schema: ASST_TOOL_SCHEMA }], messages: toAnthropicMsgs(turns) }),
           });
           if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `Anthropic API error ${resp.status}`); }
-          const data = await resp.json();
-          for (const b of data.content || []) {
-            if (b.type === "text") assistantText += b.text;
-            else if (b.type === "tool_use") calls.push({ id: b.id, name: b.name, input: b.input });
+          const toolBlocks = {};
+          for await (const ev of sseEvents(resp)) {
+            if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") {
+              toolBlocks[ev.index] = { id: ev.content_block.id, name: ev.content_block.name, json: "" };
+            } else if (ev.type === "content_block_delta") {
+              if (ev.delta?.type === "text_delta") { liveText += ev.delta.text; setAsstMsgs([...turns, { role: "assistant", text: liveText, calls: [] }]); }
+              else if (ev.delta?.type === "input_json_delta" && toolBlocks[ev.index]) { toolBlocks[ev.index].json += ev.delta.partial_json; }
+            }
           }
+          calls = Object.values(toolBlocks).map((b) => { let input = {}; try { input = b.json ? JSON.parse(b.json) : {}; } catch {} return { id: b.id, name: b.name, input }; });
         } else {
           const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
+            method: "POST", signal: ctrl.signal,
             headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
-            body: JSON.stringify({ model, messages: toOpenAIMsgs(turns, system), tools: [{ type: "function", function: { name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", parameters: ASST_TOOL_SCHEMA } }], tool_choice: "auto" }),
+            body: JSON.stringify({ model, stream: true, messages: toOpenAIMsgs(turns, system), tools: [{ type: "function", function: { name: "run_graph_query", description: toolDesc, parameters: ASST_TOOL_SCHEMA } }], tool_choice: "auto" }),
           });
           if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `OpenAI API error ${resp.status}`); }
-          const data = await resp.json();
-          const msg = data.choices?.[0]?.message || {};
-          assistantText = msg.content || "";
-          calls = (msg.tool_calls || []).map((tc) => { let input = {}; try { input = JSON.parse(tc.function.arguments || "{}"); } catch {} return { id: tc.id, name: tc.function?.name, input }; });
+          const tc = {};
+          for await (const ev of sseEvents(resp)) {
+            const d = ev.choices?.[0]?.delta; if (!d) continue;
+            if (d.content) { liveText += d.content; setAsstMsgs([...turns, { role: "assistant", text: liveText, calls: [] }]); }
+            if (Array.isArray(d.tool_calls)) for (const t of d.tool_calls) { const i = t.index ?? 0; const cur = tc[i] || { id: "", name: "", args: "" }; if (t.id) cur.id = t.id; if (t.function?.name) cur.name = t.function.name; if (t.function?.arguments) cur.args += t.function.arguments; tc[i] = cur; }
+          }
+          calls = Object.values(tc).map((t) => { let input = {}; try { input = t.args ? JSON.parse(t.args) : {}; } catch {} return { id: t.id, name: t.name, input }; });
         }
-        turns = [...turns, { role: "assistant", text: assistantText, calls }];
+        turns = [...turns, { role: "assistant", text: liveText, calls }];
         setAsstMsgs(turns);
         if (calls.length) {
           const results = [];
@@ -2263,8 +2346,11 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         }
         break;
       }
-    } catch (e) { setAsstError(e.message); }
-    finally { setAsstLoading(false); }
+    } catch (e) {
+      if (e.name === "AbortError") { setAsstMsgs([...turns, { role: "assistant", text: liveText || "_(stopped)_", calls: [] }]); }
+      else setAsstError(e.message);
+    }
+    finally { setAsstLoading(false); asstAbortRef.current = null; }
   }
 
   // render assistant text with ``` fenced code blocks (copy button + monospace)
@@ -2915,7 +3001,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {asstMsgs.length > 0 && <button onClick={() => { setAsstMsgs([]); setAsstError(null); }} style={ghostBtn()}>Clear</button>}
+                  {asstLoading && <button onClick={() => asstAbortRef.current?.abort()} style={ghostBtn(C.danger)}>Stop</button>}
+                  {asstMsgs.length > 0 && !asstLoading && <button onClick={() => { setAsstMsgs([]); setAsstError(null); }} style={ghostBtn()}>Clear</button>}
                   <button onClick={() => setAsstOpen(false)} style={ghostBtn()}>Close</button>
                 </div>
               </div>
@@ -3534,7 +3621,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                     ); })()}
                   </>
                 )}
-                {nextLink && (<button onClick={() => run(nextLink)} disabled={running} className="mt-3" style={{ ...ghostBtn(C.ok), padding: "7px 14px" }}>{running ? "Loading…" : "Load next page →"}</button>)}
+                {nextLink && (<div className="mt-3 flex items-center gap-2"><button onClick={() => run(nextLink)} disabled={running} style={{ ...ghostBtn(C.ok), padding: "7px 14px" }}>{running ? "Loading…" : "Load next page →"}</button><button onClick={loadAllPages} disabled={running} style={{ ...ghostBtn(C.version), padding: "7px 14px" }} title="Follow every @odata.nextLink and combine all pages (capped at 50 pages per click)">{running ? "Loading…" : "Load all pages ⇊"}</button></div>)}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center text-center py-12" style={{ color: C.dim }}>
