@@ -738,6 +738,45 @@ const ROW_ACTIONS = {
   ]
 };
 
+// ── Dashboards: curated metric tiles. Each tile fetches a Graph path and `read()` pulls the number out. ──
+// `count` tiles use ?$count=true&$top=1 with ConsistencyLevel:eventual and read @odata.count.
+const readCount = (d) => (d && d["@odata.count"] != null ? d["@odata.count"] : "—");
+const readLen = (d) => (d && Array.isArray(d.value) ? d.value.length : "—");
+const DASHBOARDS = {
+  exec: {
+    title: "Executive Dashboard",
+    icon: "📈",
+    blurb: "Tenant-level KPIs for leadership & recertification — identity footprint, security posture and license spend.",
+    tiles: [
+      { key: "users", icon: "👥", label: "Total users", scope: "User.Read.All", version: "v1.0", path: "users?$count=true&$top=1", read: readCount, accent: "resource", open: "Full User Directory Export" },
+      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Leaver Report — Offboarding Evidence" },
+      { key: "guests", icon: "🌐", label: "Guest accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Guest Access Recertification Report" },
+      { key: "groups", icon: "🗂", label: "Groups", scope: "Group.Read.All", version: "v1.0", path: "groups?$count=true&$top=1", read: readCount, accent: "param", open: "Group Master Inventory" },
+      { key: "devices", icon: "🖥", label: "Registered devices", scope: "Device.Read.All", version: "v1.0", path: "devices?$count=true&$top=1", read: readCount, accent: "param", open: "Entra Device Registration Report" },
+      { key: "apps", icon: "🏭", label: "Enterprise apps", scope: "Application.Read.All", version: "v1.0", path: "servicePrincipals?$count=true&$top=1", read: readCount, accent: "version", open: "Enterprise App Inventory" },
+      { key: "secure", icon: "🛡", label: "Secure Score", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/secureScores?$top=1", read: (d) => { const s = d && d.value && d.value[0]; return s ? `${Math.round(s.currentScore)} / ${Math.round(s.maxScore)}` : "—"; }, accent: "ok", open: "Secure Score Posture & Trend" },
+      { key: "lic", icon: "🪪", label: "License seats used", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: (d) => { const v = (d && d.value) || []; let c = 0, t = 0; v.forEach((s) => { c += s.consumedUnits || 0; t += (s.prepaidUnits && s.prepaidUnits.enabled) || 0; }); return `${c} / ${t}`; }, accent: "method", open: "License Inventory & Availability" },
+      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report" },
+    ],
+  },
+  sysadmin: {
+    title: "SysAdmin Dashboard",
+    icon: "📊",
+    blurb: "Operational health for daily admin work — device compliance, account hygiene and privileged/security posture.",
+    tiles: [
+      { key: "enrolled", icon: "📱", label: "Enrolled devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/managedDeviceOverview", read: (d) => (d && d.enrolledDeviceCount != null ? d.enrolledDeviceCount : "—"), accent: "resource", open: "Intune Device Master Inventory" },
+      { key: "compliant", icon: "✅", label: "Compliant devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.compliantDeviceCount != null ? d.compliantDeviceCount : "—"), accent: "ok" },
+      { key: "noncompliant", icon: "⚠", label: "Non-compliant", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.nonCompliantDeviceCount != null ? d.nonCompliantDeviceCount : "—"), accent: "danger", open: "Non-Compliant Device Remediation Report" },
+      { key: "errordev", icon: "❔", label: "Error / unknown devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d ? (d.errorDeviceCount || 0) + (d.unknownDeviceCount || 0) + (d.conflictDeviceCount || 0) : "—"), accent: "method", open: "Unknown-Compliance Investigation Report" },
+      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Disabled-but-Licensed Reclaim Report" },
+      { key: "guests", icon: "🌐", label: "Guest accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Oldest-Guest Cleanup Report" },
+      { key: "roles", icon: "👑", label: "Activated admin roles", scope: "Directory.Read.All", version: "v1.0", path: "directoryRoles", read: readLen, accent: "header", open: "Privileged Role Membership Report" },
+      { key: "ca", icon: "🔒", label: "CA policies", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies", read: readLen, accent: "param", open: "Conditional Access Coverage Report" },
+      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report" },
+    ],
+  },
+};
+
 const OPS = [
   { id: "eq", label: "equals", adv: false },
   { id: "ne", label: "not equals", adv: true },
@@ -1376,6 +1415,10 @@ function GraphBlocks() {
   const [templOpen, setTemplOpen] = useState(false);
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
+  const [loadedTemplate, setLoadedTemplate] = useState(null); // template currently loaded (for inverse/undo offer)
+  const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec"
+  const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
+  const [dashLoading, setDashLoading] = useState(false);
 
   // relationship navigation: jump to {resource}/{id}/{relationship} as a fresh query
   const navigateRelationship = (rel) => {
@@ -1898,6 +1941,94 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     }
   }
 
+  // ── reversible: load a follow-up write action (optionally targeting one result row's id) ──
+  function applyAction(act, idVal) {
+    const id = idVal != null && idVal !== "" ? String(idVal) : "OBJECT-ID";
+    const sub = (s) => (s == null ? s : s.replace(/\{id\}/g, id));
+    setMethod(act.method);
+    if (act.version) setVersion(act.version);
+    setResourceId("custom");
+    setCustomPath(sub(act.path));
+    setObjectId("");
+    setBody(act.body != null ? sub(act.body) : "{\n  \n}");
+    setParams([]);
+    setEditing(null);
+    setShowRaw(false);
+    setLoadedTemplate(null);
+    setError(null);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  // ── reversible: swap the loaded write for its inverse (and keep a path back) ──
+  function loadInverse() {
+    if (!loadedTemplate?.inverse) return;
+    const inv = loadedTemplate.inverse;
+    const back = { label: loadedTemplate.name || "original action", method: loadedTemplate.method, customPath: loadedTemplate.customPath, body: loadedTemplate.body };
+    setMethod(inv.method);
+    if (loadedTemplate.version) setVersion(loadedTemplate.version);
+    setResourceId("custom");
+    setCustomPath(inv.customPath);
+    setObjectId("");
+    setBody(inv.body != null ? inv.body : "{\n  \n}");
+    setParams([]);
+    setEditing(null);
+    setError(null);
+    setLoadedTemplate({ name: inv.label, method: inv.method, customPath: inv.customPath, body: inv.body, version: loadedTemplate.version, inverse: back });
+  }
+
+  // ── load a named template into the builder (reuses the template browser's apply logic) ──
+  function loadTemplateByName(name) {
+    const t = TEMPLATES.find((x) => x.name === name);
+    if (!t) return;
+    setMethod(t.method);
+    setVersion(t.version);
+    setResourceId(t.resId);
+    if (t.customPath != null) setCustomPath(t.customPath);
+    setObjectId("");
+    setBody(t.body != null ? t.body : "{\n  \n}");
+    setParams(t.params.map((p, i) => ({ ...p, id: Date.now() + i })));
+    setEditing(null);
+    setLoadedTemplate(t);
+    setDashOpen(null);
+    setTemplOpen(false);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ── dashboards: fetch every tile's metric (deduped by path) and store per-tile results ──
+  async function loadDashboard(which) {
+    const cfg = DASHBOARDS[which];
+    if (!cfg) return;
+    if (!account) { setError("Sign in first — dashboards read live tenant data."); return; }
+    setDashLoading(true);
+    setDashData(Object.fromEntries(cfg.tiles.map((t) => [t.key, { status: "loading" }])));
+    const uniq = {};
+    cfg.tiles.forEach((t) => { const k = `${t.version}|${t.scope}|${t.path}`; if (!uniq[k]) uniq[k] = { scope: t.scope, version: t.version, path: t.path }; });
+    const raw = {};
+    await Promise.all(Object.entries(uniq).map(async ([k, u]) => {
+      try {
+        const bearer = await getBearer(u.scope);
+        if (!bearer) { raw[k] = { ok: false, err: "no token" }; return; }
+        const headers = { Authorization: `Bearer ${bearer}`, ConsistencyLevel: "eventual" };
+        const r = await fetch(`https://graph.microsoft.com/${u.version}/${u.path}`, { headers });
+        const txt = await r.text();
+        let d = null; try { d = txt ? JSON.parse(txt) : {}; } catch { d = { raw: txt }; }
+        raw[k] = r.ok ? { ok: true, d } : { ok: false, err: (d && d.error && d.error.message) || `HTTP ${r.status}` };
+      } catch (e) { raw[k] = { ok: false, err: e.message }; }
+    }));
+    const out = {};
+    cfg.tiles.forEach((t) => {
+      const rr = raw[`${t.version}|${t.scope}|${t.path}`];
+      if (!rr || !rr.ok) { out[t.key] = { status: "err", err: (rr && rr.err) || "failed" }; return; }
+      try { const v = t.read(rr.d); out[t.key] = { status: "ok", value: v == null ? "—" : v }; }
+      catch { out[t.key] = { status: "err", err: "couldn't read metric" }; }
+    });
+    setDashData(out);
+    setDashLoading(false);
+  }
+  function openDashboard(which) {
+    setDashOpen(which); setTemplOpen(false); setAiOpen(false); setHistOpen(false); setHelpOpen(false);
+    loadDashboard(which);
+  }
+
   // result table columns
   const rows = result?.value || (result && !result.value ? [result] : []);
   const cols = useMemo(() => {
@@ -2301,6 +2432,22 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             >
               ? Help
             </button>
+            <button
+              onClick={() => openDashboard("sysadmin")}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: dashOpen === "sysadmin" ? hexA(C.ok, 0.14) : "transparent", color: dashOpen === "sysadmin" ? C.ok : C.dim, border: `1px solid ${dashOpen === "sysadmin" ? hexA(C.ok, 0.4) : C.line}` }}
+              title="Operational health dashboard"
+            >
+              📊 SysAdmin
+            </button>
+            <button
+              onClick={() => openDashboard("exec")}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: dashOpen === "exec" ? hexA(C.header, 0.14) : "transparent", color: dashOpen === "exec" ? C.header : C.dim, border: `1px solid ${dashOpen === "exec" ? hexA(C.header, 0.4) : C.line}` }}
+              title="Executive KPI dashboard"
+            >
+              📈 Executive
+            </button>
             {account ? (
               <div className="flex items-center gap-2" style={{ padding: "5px 11px", borderRadius: 9, border: `1px solid ${C.glassBorder}`, background: C.glass, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
                 <span className="w-2 h-2 rounded-full" style={{ background: C.ok }} />
@@ -2320,6 +2467,59 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             )}
           </div>
         </div>
+
+        {dashOpen && DASHBOARDS[dashOpen] && (() => {
+          const cfg = DASHBOARDS[dashOpen];
+          return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 40 }} onClick={() => setDashOpen(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 880, margin: "0 auto", marginTop: 48, background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3 pb-2.5" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
+                <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 18 }}>{cfg.icon}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <h2 style={{ fontSize: 14, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>{cfg.title}</h2>
+                    <p style={{ fontSize: 11, color: C.dim, margin: 0 }}>{cfg.blurb}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => loadDashboard(dashOpen)} disabled={dashLoading} style={{ ...ghostBtn(C.resource), opacity: dashLoading ? 0.5 : 1 }} title="Re-run all metrics">{dashLoading ? "Refreshing…" : "↻ Refresh"}</button>
+                  <button onClick={() => setDashOpen(null)} style={ghostBtn()}>Close</button>
+                </div>
+              </div>
+              <div className="px-4 py-3" style={{ overflowY: "auto", minHeight: 0 }}>
+                {!account ? (
+                  <p className="text-sm px-1 py-6 text-center" style={{ color: C.dim }}>Sign in (top right) to load live tenant metrics.</p>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+                    {cfg.tiles.map((t) => {
+                      const st = dashData[t.key] || { status: "loading" };
+                      const ac = C[t.accent] || C.resource;
+                      return (
+                        <div key={t.key} style={{ padding: "13px 14px", borderRadius: 12, background: C.panel, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: 16 }}>{t.icon}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: C.dim, letterSpacing: "0.03em", textTransform: "uppercase" }}>{t.label}</span>
+                          </div>
+                          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: MONO, color: ac, lineHeight: 1.1, minHeight: 30 }}>
+                            {st.status === "loading" ? <span style={{ fontSize: 13, color: C.dim, fontWeight: 600 }}>loading…</span>
+                              : st.status === "err" ? <span style={{ fontSize: 12, color: C.danger, fontWeight: 600 }} title={st.err}>⚠ error</span>
+                              : (typeof st.value === "number" ? st.value.toLocaleString() : String(st.value))}
+                          </div>
+                          {st.status === "err" && <span style={{ fontSize: 10, color: C.dim, lineHeight: 1.3 }}>{String(st.err).slice(0, 80)}</span>}
+                          {t.open && (
+                            <button onClick={() => loadTemplateByName(t.open)} style={{ ...ghostBtn(ac), padding: "3px 9px", fontSize: 11, alignSelf: "flex-start", marginTop: 2 }} title={`Open report: ${t.open}`}>Open report →</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs mt-3" style={{ color: C.dim }}>Metrics are live Graph reads. <b>Open report →</b> loads the full underlying report into the builder, where you can drill into rows and run reversible actions. Tiles showing <span style={{ color: C.danger }}>⚠ error</span> usually need an extra consent or admin scope — hover for the message.</p>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
 
         {histOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }} onClick={() => setHistOpen(false)}>
@@ -2498,6 +2698,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                             setBody(t.body != null ? t.body : "{\n  \n}");
                             setParams(t.params.map((p, i) => ({ ...p, id: Date.now() + i })));
                             setEditing(null);
+                            setLoadedTemplate(t);
                             setTemplOpen(false);
                           }}
                           style={{ padding: "10px 12px", borderRadius: 10, background: C.panel, border: `1px solid ${C.line}`, cursor: "pointer", transition: "border-color 0.12s" }}
@@ -2579,7 +2780,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 </button>
               )}
               <button
-                onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
+                onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); setLoadedTemplate(null); }}
                 style={ghostBtn()}
                 title="Start a fresh query"
               >
@@ -2744,6 +2945,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             <code className="flex-1 text-xs" style={{ fontFamily: MONO, color: C.resource, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>{url}</code>
           </div>
           <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
+            {loadedTemplate?.inverse && (
+              <button
+                onClick={loadInverse}
+                style={{ ...ghostBtn(C.version), padding: "5px 12px", fontSize: 12 }}
+                title={`Swap this for its inverse: ${loadedTemplate.inverse.label}`}
+              >
+                ↩ Inverse: {loadedTemplate.inverse.label}
+              </button>
+            )}
             <CopyBtn text={url} />
             <button
               onClick={saveCurrentQuery}
@@ -2753,7 +2963,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               ★ Save
             </button>
             <button
-              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); }}
+              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); setLoadedTemplate(null); }}
               style={{ ...ghostBtn(), padding: "5px 12px", fontSize: 12 }}
               title="Clear query and start fresh"
             >
@@ -2917,27 +3127,49 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text, maxHeight: 420, overflowY: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
                 ) : (
                   <>
-                    {rows.length > 1 && rows.some((r) => r.id) && (<p className="text-xs mb-2" style={{ color: C.dim }}>Click any row to load just that item by its id.</p>)}
+                    {(() => { const rowActs = (resourceId !== "custom") && ROW_ACTIONS[resourceId]; return (
+                    <>
+                    {rows.length > 1 && rows.some((r) => r.id) && (<p className="text-xs mb-2" style={{ color: C.dim }}>Click any row to load it by id{rowActs ? " · use the ⚡ menu to run a follow-up action on that row" : ""}.</p>)}
+                    {rowActs && rows.length > 0 && (
+                      <div className="flex items-center gap-1.5 mb-2 flex-wrap" style={{ padding: "7px 10px", borderRadius: 8, background: hexA(C.method, 0.08), border: `1px solid ${hexA(C.method, 0.28)}` }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.method }}>↩ Reversible — next action:</span>
+                        {rowActs.map((a, ai) => (<button key={ai} onClick={() => applyAction(a, null)} style={{ ...ghostBtn(a.danger ? C.danger : C.method), padding: "4px 10px" }} title={`Load ${a.method} ${a.path} to review`}>{a.danger ? "⚠ " : ""}{a.label}</button>))}
+                        <span style={{ fontSize: 10, color: C.dim }}>loads into the editor to review — fill the id, or use a row's ⚡ menu to auto-fill it.</span>
+                      </div>
+                    )}
                     <div className="overflow-x-auto" style={{ maxHeight: 420, overflowY: "auto" }}>
                       <table className="w-full text-xs" style={{ fontFamily: MONO }}>
                         <thead><tr>
                           <th className="sticky top-0" style={{ background: C.surface, width: 24, borderBottom: `1px solid ${C.line}` }} />
                           {cols.map((c) => (<th key={c} className="text-left px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.dim, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>{c}</th>))}
+                          {rowActs && (<th className="text-right px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.method, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>Action</th>)}
                         </tr></thead>
                         <tbody>
                           {rows.map((r, i) => {
                             const rowId = r.id || r[Object.keys(r).find((k) => /Id$/.test(k) && typeof r[k] === "string")];
-                            const drill = () => { if (!rowId) return; setResourceId(resourceId); setObjectId(String(rowId)); setParams([]); setEditing(null); setTimeout(() => run(), 0); };
+                            const drill = () => { if (!rowId) return; setResourceId(resourceId); setObjectId(String(rowId)); setParams([]); setEditing(null); setLoadedTemplate(null); setTimeout(() => run(), 0); };
                             return (
                               <tr key={i} onClick={drill} style={{ borderTop: `1px solid ${C.line}`, cursor: rowId ? "pointer" : "default" }} title={rowId ? `Load this item (id: ${rowId})` : "No id on this row"} onMouseEnter={(e) => { if (rowId) e.currentTarget.style.background = C.panel; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
                                 <td className="px-1 text-center" style={{ color: rowId ? C.resource : C.line }}>{rowId ? "›" : ""}</td>
                                 {cols.map((c) => { const v = c.includes("/") ? c.split("/").reduce((a, k) => a?.[k], r) : r[c]; return (<td key={c} className="px-2 py-1.5 whitespace-nowrap" style={{ color: C.text }}>{v === true ? "true" : v === false ? "false" : v == null ? <span style={{ color: C.dim }}>—</span> : String(v).slice(0, 48)}</td>); })}
+                                {rowActs && (
+                                  <td className="px-2 py-1 text-right" onClick={(e) => e.stopPropagation()}>
+                                    <select value="" disabled={!rowId} title={rowId ? "Run a follow-up action on this row" : "No id on this row"}
+                                      onChange={(e) => { const a = rowActs[+e.target.value]; if (a) { if (a.danger && !window.confirm(`Load "${a.label}" for this row?\n\nIt loads into the editor pre-filled — you still review and press Run before anything changes.`)) return; applyAction(a, rowId); } }}
+                                      style={{ background: C.btnBg, color: rowId ? C.text : C.dim, border: `1px solid ${C.line}`, borderRadius: 7, fontSize: 11, padding: "2px 4px", fontFamily: MONO, cursor: rowId ? "pointer" : "default" }}>
+                                      <option value="">⚡ Act…</option>
+                                      {rowActs.map((a, ai) => (<option key={ai} value={ai}>{a.danger ? "⚠ " : ""}{a.label}</option>))}
+                                    </select>
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
                     </div>
+                    </>
+                    ); })()}
                   </>
                 )}
                 {nextLink && (<button onClick={() => run(nextLink)} disabled={running} className="mt-3" style={{ ...ghostBtn(C.ok), padding: "7px 14px" }}>{running ? "Loading…" : "Load next page →"}</button>)}
