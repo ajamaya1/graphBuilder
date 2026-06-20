@@ -61,7 +61,7 @@ input,select,textarea,button{font-family:inherit}
 const { useState, useMemo, useEffect } = React;
 
 // ── localStorage persistence (history, saved queries, pinned resources) ──
-const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1", aikeyOpenAI: "gb.aikey.openai.v1", aiprovider: "gb.aiprovider.v1" };
+const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1", aikeyOpenAI: "gb.aikey.openai.v1", aiprovider: "gb.aiprovider.v1", modelAnthropic: "gb.model.anthropic.v1", modelOpenAI: "gb.model.openai.v1" };
 const LS = {
   get(key, fallback) {
     try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -134,6 +134,19 @@ const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, m
 const SANS = "'Space Grotesk', 'Segoe UI', system-ui, sans-serif";
 const ASST_MODEL = "claude-sonnet-4-6"; // Anthropic default for the assistant
 const OPENAI_MODEL = "gpt-4o";          // OpenAI default for the assistant (function-calling capable)
+// model pickers — [id, label]; all support tool/function calling
+const ANTHROPIC_MODELS = [
+  ["claude-sonnet-4-6", "Sonnet 4.6 · balanced (default)"],
+  ["claude-opus-4-8", "Opus 4.8 · most capable"],
+  ["claude-opus-4-7", "Opus 4.7"],
+  ["claude-haiku-4-5", "Haiku 4.5 · fastest"],
+];
+const OPENAI_MODELS = [
+  ["gpt-4o", "GPT-4o · balanced (default)"],
+  ["gpt-4.1", "GPT-4.1 · most capable"],
+  ["o4-mini", "o4-mini · reasoning"],
+  ["gpt-4o-mini", "GPT-4o mini · fastest"],
+];
 
 // ── shared control styles (single source of truth) ──────────
 const field = (extra) => ({
@@ -1446,6 +1459,8 @@ function GraphBlocks() {
   const [asstError, setAsstError] = useState(null);
   const [aiProvider, setAiProvider] = useState(() => LS.get(LS_KEYS.aiprovider, "anthropic")); // "anthropic" | "openai"
   const [aiKeyOpenAI, setAiKeyOpenAI] = useState(() => LS.get(LS_KEYS.aikeyOpenAI, ""));
+  const [modelAnthropic, setModelAnthropic] = useState(() => LS.get(LS_KEYS.modelAnthropic, ASST_MODEL));
+  const [modelOpenAI, setModelOpenAI] = useState(() => LS.get(LS_KEYS.modelOpenAI, OPENAI_MODEL));
   const [templOpen, setTemplOpen] = useState(false);
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
@@ -2178,6 +2193,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
   async function asstSend() {
     const provider = aiProvider === "openai" ? "openai" : "anthropic";
     const key = (provider === "openai" ? aiKeyOpenAI : aiKey).trim();
+    const model = provider === "openai" ? (modelOpenAI || OPENAI_MODEL) : (modelAnthropic || ASST_MODEL);
     const text = asstInput.trim();
     if (!text || !key || asstLoading) return;
     setAsstError(null);
@@ -2213,7 +2229,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-            body: JSON.stringify({ model: ASST_MODEL, max_tokens: 2048, system, tools: [{ name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", input_schema: ASST_TOOL_SCHEMA }], messages: toAnthropicMsgs(turns) }),
+            body: JSON.stringify({ model, max_tokens: 2048, system, tools: [{ name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", input_schema: ASST_TOOL_SCHEMA }], messages: toAnthropicMsgs(turns) }),
           });
           if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `Anthropic API error ${resp.status}`); }
           const data = await resp.json();
@@ -2225,7 +2241,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           const resp = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
-            body: JSON.stringify({ model: OPENAI_MODEL, messages: toOpenAIMsgs(turns, system), tools: [{ type: "function", function: { name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", parameters: ASST_TOOL_SCHEMA } }], tool_choice: "auto" }),
+            body: JSON.stringify({ model, messages: toOpenAIMsgs(turns, system), tools: [{ type: "function", function: { name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", parameters: ASST_TOOL_SCHEMA } }], tool_choice: "auto" }),
           });
           if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `OpenAI API error ${resp.status}`); }
           const data = await resp.json();
@@ -2943,7 +2959,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   {[["anthropic", "Claude"], ["openai", "OpenAI (GPT)"]].map(([p, label]) => (
                     <button key={p} onClick={() => { setAiProvider(p); LS.set(LS_KEYS.aiprovider, p); }} style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", background: aiProvider === p ? hexA(C.version, 0.16) : "transparent", color: aiProvider === p ? C.version : C.dim, border: `1px solid ${aiProvider === p ? hexA(C.version, 0.4) : C.line}` }}>{label}</button>
                   ))}
-                  <span style={{ fontSize: 10, color: C.dim, marginLeft: "auto", fontFamily: MONO }}>{aiProvider === "openai" ? OPENAI_MODEL : ASST_MODEL}</span>
+                  {aiProvider === "openai" ? (
+                    <select value={modelOpenAI} onChange={(e) => { setModelOpenAI(e.target.value); LS.set(LS_KEYS.modelOpenAI, e.target.value); }} title="Model" style={{ ...field(), marginLeft: "auto", width: "auto", maxWidth: 230, fontSize: 11, padding: "3px 6px" }}>
+                      {OPENAI_MODELS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                  ) : (
+                    <select value={modelAnthropic} onChange={(e) => { setModelAnthropic(e.target.value); LS.set(LS_KEYS.modelAnthropic, e.target.value); }} title="Model" style={{ ...field(), marginLeft: "auto", width: "auto", maxWidth: 230, fontSize: 11, padding: "3px 6px" }}>
+                      {ANTHROPIC_MODELS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                  )}
                 </div>
                 {(aiProvider === "openai" ? !aiKeyOpenAI.trim() : !aiKey.trim()) && (
                   <div className="flex items-center gap-2 mb-2">
