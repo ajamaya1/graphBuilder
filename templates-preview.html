@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph Builder — Templates design preview</title>
+<style>
+  :root{
+    --bg:#0D0F12; --panel:#1B1F26; --line:#262B33; --text:#E8EBF0;
+    --dim:#7A828E; --resource:#39D3B4; --glass:rgba(24,28,35,0.92);
+    --glassBorder:rgba(255,255,255,0.08); --param:#5B9DF0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:'Space Grotesk',system-ui,-apple-system,Segoe UI,sans-serif;
+    background-image:radial-gradient(60% 50% at 15% 0%, rgba(57,211,180,0.06), transparent 70%),
+                     radial-gradient(50% 45% at 90% 100%, rgba(91,157,240,0.06), transparent 70%);
+    min-height:100vh;padding:24px}
+  .nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px;
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .brand{font-size:18px;font-weight:700;margin-right:auto}
+  .brand b{color:var(--resource)}
+  .pill{padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;
+    background:transparent;color:var(--dim);border:1px solid var(--line);cursor:pointer}
+  .pill.on{background:rgba(57,211,180,0.14);color:var(--resource);border-color:rgba(57,211,180,0.4)}
+  .pill.param.on{background:rgba(91,157,240,0.14);color:var(--param);border-color:rgba(91,157,240,0.4)}
+  .shortcut{width:100%;max-width:640px;padding:10px 14px;font-size:13px;text-align:left;
+    border-radius:8px;background:rgba(57,211,180,0.08);color:var(--resource);
+    border:1px solid rgba(57,211,180,0.3);cursor:pointer;margin-bottom:24px}
+  /* modal */
+  .scrim{background:rgba(0,0,0,0.45);border-radius:16px;padding:24px}
+  .modal{max-width:860px;margin:0 auto;background:var(--glass);
+    border:1px solid var(--glassBorder);border-radius:14px;
+    box-shadow:0 24px 70px rgba(0,0,0,0.5);overflow:hidden}
+  .mhead{display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;border-bottom:1px solid var(--glassBorder)}
+  .mhead .tt{display:flex;align-items:center;gap:10px}
+  .bar{width:3px;height:13px;border-radius:2px;background:var(--resource)}
+  .mtitle{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .close{padding:5px 11px;border-radius:7px;font-size:12px;background:transparent;
+    color:var(--dim);border:1px solid var(--line);cursor:pointer}
+  .sub{padding:14px 20px;border-bottom:1px solid var(--glassBorder)}
+  .search{width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel);color:var(--text);font-size:13px;margin-bottom:12px;outline:none}
+  .cats{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+  .chip{flex-shrink:0;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;
+    cursor:pointer;background:var(--panel);color:var(--dim);border:1px solid var(--line);white-space:nowrap}
+  .chip.on{background:rgba(57,211,180,0.18);color:var(--resource);border-color:rgba(57,211,180,0.5)}
+  .grid{padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:10px;
+    max-height:60vh;overflow-y:auto}
+  .card{padding:10px 12px;border-radius:10px;background:var(--panel);
+    border:1px solid var(--line);cursor:pointer;text-align:left;transition:border-color .12s}
+  .card:hover{border-color:var(--resource)}
+  .card .top{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .card .ico{font-size:15px}
+  .card .nm{font-size:12px;font-weight:700;color:var(--text)}
+  .card .ct{font-size:10px;color:var(--resource);font-weight:600;margin-bottom:3px}
+  .card .ds{font-size:11px;color:var(--dim);line-height:1.4}
+  .note{max-width:860px;margin:20px auto 0;font-size:12px;color:var(--dim);text-align:center}
+  @media(max-width:640px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="nav">
+    <div class="brand">Graph <b>Builder</b></div>
+    <button class="pill">&#9728;</button>
+    <button class="pill param on">Learn mode on</button>
+    <button class="pill on">&#128203; Templates</button>
+    <button class="pill">&#10024; AI</button>
+    <button class="pill">History</button>
+    <button class="pill">? Help</button>
+  </div>
+
+  <button class="shortcut">&#128203; Browse 110 templates &mdash; Intune &middot; Users &middot; Security &middot; Audit &rsaquo;</button>
+
+  <div class="scrim">
+    <div class="modal">
+      <div class="mhead">
+        <div class="tt"><span class="bar"></span>
+          <span class="mtitle">&#128203; Templates (110/110)</span>
+        </div>
+        <button class="close">Close</button>
+      </div>
+      <div class="sub">
+        <input class="search" placeholder="Search templates&hellip;">
+        <div class="cats">
+          <span class="chip on">All</span>
+          <span class="chip">Intune &mdash; Managed Devices</span>
+          <span class="chip">Intune &mdash; Apps &amp; Policies</span>
+          <span class="chip">Windows 365 &mdash; Cloud PC</span>
+          <span class="chip">Autopilot</span>
+          <span class="chip">Users &amp; Identity</span>
+          <span class="chip">Groups &amp; Directory</span>
+          <span class="chip">Conditional Access</span>
+          <span class="chip">Sign-ins &amp; Identity Risk</span>
+          <span class="chip">Licensing</span>
+          <span class="chip">Enterprise Apps</span>
+          <span class="chip">Security &amp; Threats</span>
+          <span class="chip">Exchange &amp; Mailbox</span>
+          <span class="chip">Audit &amp; Reports</span>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+
+  <p class="note">Static design preview &mdash; no CDNs, no auth, renders offline. The real index.html is the live React app.</p>
+
+<script>
+  // Representative sample of the 110 templates (one or two per category) so the
+  // grid looks exactly like the live modal.
+  var T = [
+    ["🔓","Jailbroken / rooted devices","Intune — Managed Devices","Devices flagged jailBroken eq true (beta)"],
+    ["💾","Low storage — least free space","Intune — Managed Devices","Top 50 devices by least free storage"],
+    ["⚠️","Non-compliant devices","Intune — Managed Devices","complianceState eq noncompliant"],
+    ["🕒","Stale devices (90+ days)","Intune — Managed Devices","Not synced in 90 days, oldest first"],
+    ["📦","All assigned apps","Intune — Apps & Policies","mobileApps with assignments expanded"],
+    ["🛡️","Compliance policies","Intune — Apps & Policies","deviceCompliancePolicies inventory"],
+    ["☁️","All Cloud PCs","Windows 365 — Cloud PC","virtualEndpoint/cloudPCs"],
+    ["❌","Failed Cloud PC provisioning","Windows 365 — Cloud PC","status eq failed"],
+    ["🚀","All Autopilot identities","Autopilot","windowsAutopilotDeviceIdentities"],
+    ["🏷️","Autopilot by group tag","Autopilot","Grouped by groupTag"],
+    ["🏢","Users by department","Users & Identity","All users sorted by department"],
+    ["🚫","Disabled accounts","Users & Identity","accountEnabled eq false"],
+    ["👥","Guest users","Users & Identity","userType eq Guest"],
+    ["👔","Direct reports of a manager","Users & Identity","manager / directReports chain"],
+    ["🔐","Security groups","Groups & Directory","securityEnabled eq true"],
+    ["⚡","Dynamic groups","Groups & Directory","Membership rule processing on"],
+    ["🛡️","All CA policies","Conditional Access","identity/conditionalAccess/policies"],
+    ["📝","Report-only CA policies","Conditional Access","state eq enabledForReportingButNotEnforced"],
+    ["🔥","High-risk users","Sign-ins & Identity Risk","riskLevel eq high"],
+    ["🚨","Risk detections","Sign-ins & Identity Risk","identityProtection/riskDetections"],
+    ["🪪","License inventory","Licensing","subscribedSkus — seat counts"],
+    ["🌍","Missing usage location","Licensing","Blocks license assignment"],
+    ["📱","All app registrations","Enterprise Apps","applications inventory"],
+    ["🆔","Managed identities","Enterprise Apps","servicePrincipalType eq ManagedIdentity"],
+    ["🔔","Active security alerts","Security & Threats","security/alerts_v2 newStatus"],
+    ["📊","Secure Score","Security & Threats","security/secureScores trend"],
+    ["📬","All users — email info","Exchange & Mailbox","mail, proxyAddresses, UPN"],
+    ["📁","My OneDrive by size","Exchange & Mailbox","drive/root/children by size"],
+    ["📜","Recent audit events","Audit & Reports","directoryAudits, newest first"],
+    ["🔑","Password reset audits","Audit & Reports","Self-service & admin resets"]
+  ];
+  var g = document.getElementById('grid');
+  g.innerHTML = T.map(function(t){
+    return '<button class="card"><div class="top"><span class="ico">'+t[0]+
+      '</span><span class="nm">'+t[1]+'</span></div><div class="ct">'+t[2]+
+      '</div><div class="ds">'+t[3]+'</div></button>';
+  }).join('');
+</script>
+</body>
+</html>
