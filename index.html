@@ -1646,8 +1646,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     ["me", "User.Read"],
   ];
   const queryScope = useMemo(() => {
+    const p = res.path.replace(/^\//, "");
+    // Intune per-device remote actions (POST .../managedDevices/{id}/<action> — wipe, retire,
+    // syncDevice, rebootNow, remoteLock, rotateBitLockerKeys, …) need the PrivilegedOperations
+    // scope, not plain ReadWrite. Requesting it upfront avoids a 403 on Run.
+    if (method === "POST" && /^deviceManagement\/managedDevices\/[^/]+\/.+/.test(p)) {
+      return "DeviceManagementManagedDevices.PrivilegedOperations.All";
+    }
     const base = res.scope || (() => {
-      const p = res.path.replace(/^\//, "");
       const hit = SCOPE_BY_PREFIX.find(([pre]) => p.startsWith(pre));
       return hit ? hit[1] : "User.Read";
     })();
@@ -1859,12 +1865,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
       if (!r.ok) {
         const msg = data?.error?.message || data?.Message || `HTTP ${r.status}`;
         const code = data?.error?.code ? ` (${data.error.code})` : "";
-        // Graph often lists acceptable scopes in the message on a 403 — extract them
-        const found = [...new Set(msg.match(/[A-Za-z][A-Za-z.]*\.(?:ReadWrite|Read)(?:\.All)?/g) || [])];
-        // for writes, surface ReadWrite scopes; for reads, prefer Read but accept ReadWrite
+        // Graph (and the Intune proxy) list acceptable scopes in the message on a 403 — extract them.
+        // Match any dotted PascalCase permission, e.g. User.Read.All, Mail.ReadWrite,
+        // DeviceManagementManagedDevices.PrivilegedOperations.All (not just Read/ReadWrite).
+        const found = [...new Set(msg.match(/[A-Z][A-Za-z]+(?:\.[A-Z][A-Za-z]+)+/g) || [])]
+          .filter((s) => /\.(Read|ReadWrite|ReadBasic|Manage|PrivilegedOperations|AccessAsUser|Selected)/.test(s) || /\.All$/.test(s));
+        // for reads, prefer the pure Read scope; for writes, drop pure-read scopes (keep ReadWrite / PrivilegedOperations / etc.)
         const preferred = method === "GET"
           ? found.filter((s) => /\.Read(\.All)?$/.test(s))
-          : found.filter((s) => /\.ReadWrite(\.All)?$/.test(s));
+          : found.filter((s) => !/\.Read(\.All)?$/.test(s));
         setNeededScopes(preferred.length ? preferred : found);
         throw new Error(msg + code);
       }
