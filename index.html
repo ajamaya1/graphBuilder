@@ -949,11 +949,27 @@ const CHAINS = {
 
 // ── helpers ──────────────────────────────────────────────────
 function clauseToOData(c, res) {
+  const raw = (c.val ?? "").trim();
+  const isNull = raw.toLowerCase() === "null";       // literal null → unquoted (e.g. department eq null)
   const isBool = res?.bools?.includes(c.prop);
-  const isNum = /^\d+$/.test(c.val) && !isBool;
-  const v = isBool || isNum ? c.val : `'${(c.val || "").replace(/'/g, "''")}'`;
-  if (c.op === "startswith" || c.op === "contains") return `${c.op}(${c.prop},${v})`;
+  const isNum = /^-?\d+$/.test(raw) && !isBool;
+  const v = isNull ? "null" : (isBool || isNum ? raw : `'${raw.replace(/'/g, "''")}'`);
+  // startswith/contains take a string arg; null isn't valid there, fall through to plain comparison
+  if ((c.op === "startswith" || c.op === "contains") && !isNull) return `${c.op}(${c.prop},${v})`;
   return `${c.prop} ${c.op} ${v}`;
+}
+
+// A custom path can take an appended /{id} only if it's a bare collection — not a function/$ref,
+// an action verb (.../{id}/syncDevice), or a path that already contains an explicit id segment.
+function pathAcceptsAppendedId(p) {
+  const segs = (p || "").split("/").filter(Boolean);
+  if (segs.length <= 1) return true;
+  const last = segs[segs.length - 1];
+  if (/[()$]/.test(last)) return false; // function call, $ref, $count, $value …
+  const idLike = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) || /-?id$/i.test(s);
+  if (/^[a-z]/.test(last) && idLike(segs[segs.length - 2] || "")) return false; // .../{id}/actionVerb
+  if (segs.some(idLike)) return false; // already targets a specific item
+  return true;
 }
 
 function buildQuery(params, res, consistency) {
@@ -979,8 +995,8 @@ function needsConsistency(params, res) {
   const hasOrderby = params.some((p) => p.type === "orderby" && p.prop);
   const hasExpand = params.some((p) => p.type === "expand" && p.value);
   const hasCount = params.some((p) => p.type === "count");
-  // advanced operators (ne, contains, …) always require the advanced-query mode
-  const advFilter = params.some((p) => p.type === "filter" && p.clauses?.some((c) => c.prop && c.val !== "" && OPS.find((o) => o.id === c.op)?.adv));
+  // advanced operators (ne, contains, …) and null comparisons always require the advanced-query mode
+  const advFilter = params.some((p) => p.type === "filter" && p.clauses?.some((c) => c.prop && c.val !== "" && (OPS.find((o) => o.id === c.op)?.adv || (c.val || "").trim().toLowerCase() === "null")));
   if (advFilter) return true;
   // $count on a directory collection always requires ConsistencyLevel:eventual
   if (hasCount) return true;
@@ -1393,6 +1409,7 @@ function GraphBlocks() {
   const [pinned, setPinned] = useState(() => LS.get(LS_KEYS.pinned, []));
   const [discoveredProps, setDiscoveredProps] = useState([]);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [neededScopes, setNeededScopes] = useState([]);
   const [nextLink, setNextLink] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -1449,7 +1466,9 @@ function GraphBlocks() {
   const consistencyOn = consistencyNeeded && autoConsistency;
 
   const query = useMemo(() => buildQuery(params, res, consistencyOn), [params, res, consistencyOn]);
-  const path = `${res.path}${objectId ? "/" + objectId.trim() : ""}`;
+  // append /{id} only when it makes sense — never after an action/function or a path that already has an id
+  const appendId = objectId.trim() && (resourceId !== "custom" || pathAcceptsAppendedId(res.path));
+  const path = `${res.path}${appendId ? "/" + objectId.trim() : ""}`;
   const url = `https://graph.microsoft.com/${version}/${path}${objectId ? "" : query}`;
 
   const betaWarn = res.betaOnly && version === "v1.0";
@@ -1829,6 +1848,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
   // ── run ──
   async function run(uri, scopeOverride) {
     setError(null);
+    setNotice(null);
     if (!account) {
       setError("Sign in first — read-only consent takes one tap.");
       return;
@@ -1853,7 +1873,24 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         headers["Content-Type"] = "application/json";
         opts.body = body;
       }
-      const r = await fetch(uri || url, opts);
+      let reqUrl = uri || url;
+      let r = await fetch(reqUrl, opts);
+      // Some directory queries reject $orderby when combined with $filter/$expand/$count.
+      // If Graph says sorting isn't supported, transparently retry once without $orderby.
+      if (!r.ok && r.status === 400 && /\$orderby=/i.test(reqUrl)) {
+        const peek = await r.clone().text();
+        if (/unsupportedquery|sorting (is )?not supported|not supported for/i.test(peek)) {
+          const stripped = reqUrl
+            .replace(/(\?|&)\$orderby=[^&]*/i, (m, sep) => (sep === "?" ? "?" : ""))
+            .replace(/\?&/, "?").replace(/&&/g, "&").replace(/[?&]$/, "");
+          if (stripped !== reqUrl) {
+            const r2 = await fetch(stripped, opts);
+            r = r2;
+            reqUrl = stripped;
+            if (r2.ok) setNotice("Graph couldn't sort this query alongside the current filter/expand, so $orderby was dropped — results are unsorted. Sort a column locally, or remove the filter/expand to sort server-side.");
+          }
+        }
+      }
       // capture response headers + status (Graph Explorer style)
       const rh = {};
       r.headers.forEach((v, k) => { rh[k] = v; });
@@ -3103,6 +3140,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           )}
 
           {error && <p className="mt-3" style={callout(C.danger)}>{error}</p>}
+          {notice && !error && <p className="mt-3" style={callout(C.method)}>{notice}</p>}
         </Section>
 
         {/* RESPONSE tabs */}
