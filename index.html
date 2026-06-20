@@ -61,7 +61,7 @@ input,select,textarea,button{font-family:inherit}
 const { useState, useMemo, useEffect } = React;
 
 // ── localStorage persistence (history, saved queries, pinned resources) ──
-const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1" };
+const LS_KEYS = { history: "gb.history.v1", saved: "gb.saved.v1", pinned: "gb.pinned.v1", aikey: "gb.aikey.v1", aikeyOpenAI: "gb.aikey.openai.v1", aiprovider: "gb.aiprovider.v1" };
 const LS = {
   get(key, fallback) {
     try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -132,7 +132,8 @@ let C = THEMES.dark;
 
 const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const SANS = "'Space Grotesk', 'Segoe UI', system-ui, sans-serif";
-const ASST_MODEL = "claude-sonnet-4-6"; // conversational assistant (build PowerShell + run read-only queries)
+const ASST_MODEL = "claude-sonnet-4-6"; // Anthropic default for the assistant
+const OPENAI_MODEL = "gpt-4o";          // OpenAI default for the assistant (function-calling capable)
 
 // ── shared control styles (single source of truth) ──────────
 const field = (extra) => ({
@@ -1439,10 +1440,12 @@ function GraphBlocks() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [asstOpen, setAsstOpen] = useState(false);   // conversational assistant panel
-  const [asstMsgs, setAsstMsgs] = useState([]);       // Anthropic-shaped message history
+  const [asstMsgs, setAsstMsgs] = useState([]);       // provider-neutral turns: {role, text, calls?, results?}
   const [asstInput, setAsstInput] = useState("");
   const [asstLoading, setAsstLoading] = useState(false);
   const [asstError, setAsstError] = useState(null);
+  const [aiProvider, setAiProvider] = useState(() => LS.get(LS_KEYS.aiprovider, "anthropic")); // "anthropic" | "openai"
+  const [aiKeyOpenAI, setAiKeyOpenAI] = useState(() => LS.get(LS_KEYS.aikeyOpenAI, ""));
   const [templOpen, setTemplOpen] = useState(false);
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
@@ -2131,19 +2134,62 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     return { ok: true, status: resp.status, url, data: trimmed };
   }
 
+  // tool both providers expose — same JSON schema for Anthropic input_schema and OpenAI parameters
+  const ASST_TOOL_SCHEMA = {
+    type: "object",
+    properties: {
+      method: { type: "string", enum: ["GET", "POST", "PATCH", "DELETE"] },
+      version: { type: "string", enum: ["v1.0", "beta"] },
+      resourceId: { type: "string", description: "preset id, or 'custom'" },
+      customPath: { type: "string", description: "Graph path when resourceId is 'custom' (e.g. users/{id}/memberOf)" },
+      objectId: { type: "string", description: "id to target a single object" },
+      body: { type: "string", description: "JSON request body for POST/PATCH" },
+      params: { type: "array", items: { type: "object" }, description: "OData params: select/filter/top/orderby/count/expand objects" },
+    },
+    required: ["method", "version", "resourceId"],
+  };
+
+  // turn the neutral transcript into each provider's message format
+  function toAnthropicMsgs(turns) {
+    return turns.map((t) => {
+      if (t.role === "user") return { role: "user", content: t.text };
+      if (t.role === "assistant") {
+        const content = [];
+        if (t.text) content.push({ type: "text", text: t.text });
+        (t.calls || []).forEach((c) => content.push({ type: "tool_use", id: c.id, name: c.name, input: c.input }));
+        return { role: "assistant", content: content.length ? content : [{ type: "text", text: "" }] };
+      }
+      return { role: "user", content: (t.results || []).map((r) => ({ type: "tool_result", tool_use_id: r.id, content: r.output })) };
+    });
+  }
+  function toOpenAIMsgs(turns, system) {
+    const out = [{ role: "system", content: system }];
+    for (const t of turns) {
+      if (t.role === "user") out.push({ role: "user", content: t.text });
+      else if (t.role === "assistant") {
+        const m = { role: "assistant", content: t.text || "" };
+        if ((t.calls || []).length) m.tool_calls = t.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.input || {}) } }));
+        out.push(m);
+      } else (t.results || []).forEach((r) => out.push({ role: "tool", tool_call_id: r.id, content: r.output }));
+    }
+    return out;
+  }
+
   async function asstSend() {
+    const provider = aiProvider === "openai" ? "openai" : "anthropic";
+    const key = (provider === "openai" ? aiKeyOpenAI : aiKey).trim();
     const text = asstInput.trim();
-    if (!text || !aiKey.trim() || asstLoading) return;
+    if (!text || !key || asstLoading) return;
     setAsstError(null);
-    let convo = [...asstMsgs, { role: "user", content: text }];
-    setAsstMsgs(convo);
+    let turns = [...asstMsgs, { role: "user", text }];
+    setAsstMsgs(turns);
     setAsstInput("");
     setAsstLoading(true);
     const catalog = RESOURCES.map((x) => `  ${x.id}: ${x.label} → ${x.path}`).join("\n");
     const system = `You are a Microsoft Graph + Microsoft Graph PowerShell SDK expert embedded in "Graph Builder", a browser tool already signed in to the user's Microsoft 365 / Entra tenant via delegated auth.
 
 You can:
-1. Run READ-ONLY (GET) Graph queries live with the run_graph_query tool and read the results to answer questions or refine your approach. Prefer the preset resource ids below; otherwise use resourceId "custom" with a customPath.
+1. Run READ-ONLY (GET) Graph queries live with the run_graph_query tool and read the results to answer questions or refine your approach. Prefer the preset resource ids below; otherwise use resourceId "custom" with a customPath. Call the tool as many times as needed to build up the answer (like Lokka).
 2. Write Microsoft Graph PowerShell SDK scripts (Connect-MgGraph -Scopes ..., Get-Mg*, Update-Mg*, Invoke-MgGraphRequest) in fenced \`\`\`powershell code blocks when the user wants a script to run themselves.
 
 For WRITE operations (POST/PATCH/DELETE): calling run_graph_query will NOT execute them — it stages the request in the builder for the user to review and Run manually. So for changes, either stage it that way or give a PowerShell script; never claim a change was made.
@@ -2151,7 +2197,7 @@ For WRITE operations (POST/PATCH/DELETE): calling run_graph_query will NOT execu
 Preset resources (use the id as resourceId):
 ${catalog}
 
-Param shapes for run_graph_query:
+Param shapes for run_graph_query params[]:
 • select  → { "type":"select", "props":["displayName","id"] }
 • filter  → { "type":"filter", "join":"and", "clauses":[{"prop":"accountEnabled","op":"eq","val":"false"}] }   (ops: eq, ne, startswith, contains, ge, le; use val "null" for null checks)
 • top     → { "type":"top", "value":"50" }
@@ -2160,44 +2206,43 @@ Param shapes for run_graph_query:
 • expand  → { "type":"expand", "value":"manager($select=displayName)" }
 
 Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protection; "v1.0" otherwise. Be concise. When you run a query, summarize what came back rather than pasting raw JSON.`;
-    const tool = {
-      name: "run_graph_query",
-      description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.",
-      input_schema: {
-        type: "object",
-        properties: {
-          method: { type: "string", enum: ["GET", "POST", "PATCH", "DELETE"] },
-          version: { type: "string", enum: ["v1.0", "beta"] },
-          resourceId: { type: "string", description: "preset id, or 'custom'" },
-          customPath: { type: "string", description: "Graph path when resourceId is 'custom'" },
-          objectId: { type: "string", description: "id to target a single object" },
-          body: { type: "string", description: "JSON request body for POST/PATCH" },
-          params: { type: "array", items: { type: "object" } },
-        },
-        required: ["method", "version", "resourceId"],
-      },
-    };
     try {
-      for (let hop = 0; hop < 6; hop++) {
-        const resp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": aiKey.trim(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-          body: JSON.stringify({ model: ASST_MODEL, max_tokens: 2048, system, tools: [tool], messages: convo }),
-        });
-        if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `Anthropic API error ${resp.status}`); }
-        const data = await resp.json();
-        convo = [...convo, { role: "assistant", content: data.content }];
-        setAsstMsgs(convo);
-        if (data.stop_reason === "tool_use") {
-          const results = [];
-          for (const block of data.content) {
-            if (block.type === "tool_use") {
-              let out; try { out = await execGraphQuery(block.input); } catch (e) { out = { error: e.message }; }
-              results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(out).slice(0, 7000) });
-            }
+      for (let hop = 0; hop < 8; hop++) {
+        let assistantText = "", calls = [];
+        if (provider === "anthropic") {
+          const resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+            body: JSON.stringify({ model: ASST_MODEL, max_tokens: 2048, system, tools: [{ name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", input_schema: ASST_TOOL_SCHEMA }], messages: toAnthropicMsgs(turns) }),
+          });
+          if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `Anthropic API error ${resp.status}`); }
+          const data = await resp.json();
+          for (const b of data.content || []) {
+            if (b.type === "text") assistantText += b.text;
+            else if (b.type === "tool_use") calls.push({ id: b.id, name: b.name, input: b.input });
           }
-          convo = [...convo, { role: "user", content: results }];
-          setAsstMsgs(convo);
+        } else {
+          const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
+            body: JSON.stringify({ model: OPENAI_MODEL, messages: toOpenAIMsgs(turns, system), tools: [{ type: "function", function: { name: "run_graph_query", description: "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.", parameters: ASST_TOOL_SCHEMA } }], tool_choice: "auto" }),
+          });
+          if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || `OpenAI API error ${resp.status}`); }
+          const data = await resp.json();
+          const msg = data.choices?.[0]?.message || {};
+          assistantText = msg.content || "";
+          calls = (msg.tool_calls || []).map((tc) => { let input = {}; try { input = JSON.parse(tc.function.arguments || "{}"); } catch {} return { id: tc.id, name: tc.function?.name, input }; });
+        }
+        turns = [...turns, { role: "assistant", text: assistantText, calls }];
+        setAsstMsgs(turns);
+        if (calls.length) {
+          const results = [];
+          for (const c of calls) {
+            let out; try { out = await execGraphQuery(c.input); } catch (e) { out = { error: e.message }; }
+            results.push({ id: c.id, output: JSON.stringify(out).slice(0, 7000) });
+          }
+          turns = [...turns, { role: "tool", results }];
+          setAsstMsgs(turns);
           continue;
         }
         break;
@@ -2862,7 +2907,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               <div className="px-4 py-3" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 {asstMsgs.length === 0 && (
                   <div style={{ color: C.dim, fontSize: 12.5, lineHeight: 1.6 }}>
-                    <p style={{ marginBottom: 8 }}>Ask in plain English — Claude is signed into this tenant and can:</p>
+                    <p style={{ marginBottom: 8 }}>Ask in plain English — the assistant (Claude or OpenAI, your choice below) is signed into this tenant and can:</p>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
                       <li><b style={{ color: C.text }}>Run read-only queries</b> and summarize what comes back (e.g. “how many non-compliant Windows devices do we have?”).</li>
                       <li><b style={{ color: C.text }}>Write a PowerShell script</b> for a task (e.g. “give me a script to disable all guests who haven’t signed in for 90 days”).</li>
@@ -2872,35 +2917,42 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   </div>
                 )}
                 {asstMsgs.map((m, i) => {
-                  if (m.role === "user" && typeof m.content === "string") {
-                    return (<div key={i} className="flex justify-end mb-3"><div style={{ background: hexA(C.version, 0.16), color: C.text, borderRadius: 10, padding: "8px 12px", fontSize: 12.5, maxWidth: "85%", whiteSpace: "pre-wrap" }}>{m.content}</div></div>);
+                  if (m.role === "user") {
+                    return (<div key={i} className="flex justify-end mb-3"><div style={{ background: hexA(C.version, 0.16), color: C.text, borderRadius: 10, padding: "8px 12px", fontSize: 12.5, maxWidth: "85%", whiteSpace: "pre-wrap" }}>{m.text}</div></div>);
                   }
-                  if (m.role === "user" && Array.isArray(m.content)) {
-                    // tool results we sent back — show a subtle marker, not the raw JSON
-                    return (<div key={i} className="mb-2" style={{ fontSize: 10.5, color: C.dim, fontFamily: MONO }}>📥 results returned to Claude</div>);
+                  if (m.role === "tool") {
+                    return (<div key={i} className="mb-2" style={{ fontSize: 10.5, color: C.dim, fontFamily: MONO }}>📥 results returned</div>);
                   }
-                  if (m.role === "assistant" && Array.isArray(m.content)) {
+                  if (m.role === "assistant") {
                     return (
                       <div key={i} className="mb-3" style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55 }}>
-                        {m.content.map((b, j) => {
-                          if (b.type === "text") return <div key={j}>{renderRich(b.text)}</div>;
-                          if (b.type === "tool_use") { const q = b.input || {}; return (<div key={j} style={{ fontSize: 10.5, color: C.resource, fontFamily: MONO, margin: "4px 0", padding: "3px 8px", border: `1px solid ${hexA(C.resource, 0.3)}`, borderRadius: 6, display: "inline-block" }}>🔧 {q.method || "GET"} {(q.resourceId && q.resourceId !== "custom") ? q.resourceId : (q.customPath || "")}</div>); }
-                          return null;
-                        })}
+                        {m.text ? <div>{renderRich(m.text)}</div> : null}
+                        {(m.calls || []).map((c, j) => { const q = c.input || {}; return (<div key={j} style={{ fontSize: 10.5, color: C.resource, fontFamily: MONO, margin: "4px 0", padding: "3px 8px", border: `1px solid ${hexA(C.resource, 0.3)}`, borderRadius: 6, display: "inline-block" }}>🔧 {q.method || "GET"} {(q.resourceId && q.resourceId !== "custom") ? q.resourceId : (q.customPath || "")}</div>); })}
                       </div>
                     );
                   }
                   return null;
                 })}
-                {asstLoading && <div style={{ fontSize: 12, color: C.dim }}>Claude is working…</div>}
+                {asstLoading && <div style={{ fontSize: 12, color: C.dim }}>{aiProvider === "openai" ? "GPT" : "Claude"} is working…</div>}
                 {asstError && <p style={{ ...callout(C.danger), marginTop: 8, fontSize: 11.5 }}>{asstError}</p>}
               </div>
 
               <div className="px-4 py-3" style={{ borderTop: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
-                {!aiKey.trim() && (
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span style={{ fontSize: 11, color: C.dim }}>Engine:</span>
+                  {[["anthropic", "Claude"], ["openai", "OpenAI (GPT)"]].map(([p, label]) => (
+                    <button key={p} onClick={() => { setAiProvider(p); LS.set(LS_KEYS.aiprovider, p); }} style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", background: aiProvider === p ? hexA(C.version, 0.16) : "transparent", color: aiProvider === p ? C.version : C.dim, border: `1px solid ${aiProvider === p ? hexA(C.version, 0.4) : C.line}` }}>{label}</button>
+                  ))}
+                  <span style={{ fontSize: 10, color: C.dim, marginLeft: "auto", fontFamily: MONO }}>{aiProvider === "openai" ? OPENAI_MODEL : ASST_MODEL}</span>
+                </div>
+                {(aiProvider === "openai" ? !aiKeyOpenAI.trim() : !aiKey.trim()) && (
                   <div className="flex items-center gap-2 mb-2">
-                    <input type="password" value={aiKey} onChange={(e) => { setAiKey(e.target.value); LS.set(LS_KEYS.aikey, e.target.value); }} placeholder="Claude API key (sk-ant-…) — stored in this browser only" className="flex-1" style={{ ...field(), fontSize: 12 }} />
-                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ ...ghostBtn(C.param), textDecoration: "none", whiteSpace: "nowrap", fontSize: 11 }}>Get key →</a>
+                    {aiProvider === "openai" ? (
+                      <input type="password" value={aiKeyOpenAI} onChange={(e) => { setAiKeyOpenAI(e.target.value); LS.set(LS_KEYS.aikeyOpenAI, e.target.value); }} placeholder="OpenAI API key (sk-…) — stored in this browser only" className="flex-1" style={{ ...field(), fontSize: 12 }} />
+                    ) : (
+                      <input type="password" value={aiKey} onChange={(e) => { setAiKey(e.target.value); LS.set(LS_KEYS.aikey, e.target.value); }} placeholder="Claude API key (sk-ant-…) — stored in this browser only" className="flex-1" style={{ ...field(), fontSize: 12 }} />
+                    )}
+                    <a href={aiProvider === "openai" ? "https://platform.openai.com/api-keys" : "https://console.anthropic.com/settings/keys"} target="_blank" rel="noopener noreferrer" style={{ ...ghostBtn(C.param), textDecoration: "none", whiteSpace: "nowrap", fontSize: 11 }}>Get key →</a>
                   </div>
                 )}
                 <div className="flex items-end gap-2">
@@ -2908,14 +2960,16 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                     value={asstInput}
                     onChange={(e) => setAsstInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); asstSend(); } }}
-                    placeholder={aiKey.trim() ? "Ask anything… (Enter to send, Shift+Enter for newline)" : "Add your Claude API key above to start"}
+                    placeholder={(aiProvider === "openai" ? aiKeyOpenAI.trim() : aiKey.trim()) ? "Ask anything… (Enter to send, Shift+Enter for newline)" : `Add your ${aiProvider === "openai" ? "OpenAI" : "Claude"} API key above to start`}
                     rows={2}
                     className="flex-1"
                     style={{ ...field(), resize: "none", fontSize: 12.5 }}
                   />
-                  <button onClick={asstSend} disabled={asstLoading || !asstInput.trim() || !aiKey.trim()} style={{ ...primaryBtn(hexA(C.version, asstLoading || !asstInput.trim() || !aiKey.trim() ? 0.3 : 1)), padding: "9px 16px", cursor: asstLoading || !asstInput.trim() || !aiKey.trim() ? "default" : "pointer" }}>{asstLoading ? "…" : "Send"}</button>
+                  {(() => { const hasKey = (aiProvider === "openai" ? aiKeyOpenAI : aiKey).trim(); const off = asstLoading || !asstInput.trim() || !hasKey; return (
+                  <button onClick={asstSend} disabled={off} style={{ ...primaryBtn(hexA(C.version, off ? 0.3 : 1)), padding: "9px 16px", cursor: off ? "default" : "pointer" }}>{asstLoading ? "…" : "Send"}</button>
+                  ); })()}
                 </div>
-                <p style={{ fontSize: 10, color: C.dim, marginTop: 7 }}>Powered by Claude (Anthropic) via your key, stored only in this browser. Read-only GET queries run live; POST/PATCH/DELETE are staged in the builder for you to review and Run.</p>
+                <p style={{ fontSize: 10, color: C.dim, marginTop: 7 }}>Powered by your {aiProvider === "openai" ? "OpenAI" : "Anthropic (Claude)"} key, stored only in this browser & sent only to that provider. The model builds & runs the Graph calls itself (Lokka-style). Read-only GET runs live; POST/PATCH/DELETE are staged in the builder for you to review and Run.</p>
               </div>
             </div>
           </div>
