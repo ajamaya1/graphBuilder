@@ -3077,7 +3077,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                     style={{ ...field(), resize: "none", fontSize: 12.5 }}
                   />
                   {(() => { const hasKey = (aiProvider === "openai" ? aiKeyOpenAI : aiKey).trim(); const off = asstLoading || !asstInput.trim() || !hasKey; return (
-                  <button onClick={asstSend} disabled={off} style={{ ...primaryBtn(hexA(C.version, off ? 0.3 : 1)), padding: "9px 16px", cursor: off ? "default" : "pointer" }}>{asstLoading ? "…" : "Send"}</button>
+                  <button onClick={asstSend} disabled={off} style={{ ...primaryBtn(hexA(C.version, off ? 0.3 : 1)), width: "auto", flexShrink: 0, padding: "9px 16px", cursor: off ? "default" : "pointer" }}>{asstLoading ? "…" : "Send"}</button>
                   ); })()}
                 </div>
                 <p style={{ fontSize: 10, color: C.dim, marginTop: 7 }}>Powered by your {aiProvider === "openai" ? "OpenAI" : "Anthropic (Claude)"} key, stored only in this browser & sent only to that provider. The model builds & runs the Graph calls itself (Lokka-style). Read-only GET runs live; POST/PATCH/DELETE are staged in the builder for you to review and Run.</p>
