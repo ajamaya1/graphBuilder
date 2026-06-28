@@ -1419,6 +1419,98 @@ function ChartsView({ rows, C }) {
   );
 }
 
+// ── Explain this query: narrate the current query block-by-block (Learn mode) ──
+const OP_PHRASE = { eq: "equals", ne: "is not", startswith: "starts with", contains: "contains", ge: "is ≥", le: "is ≤" };
+function ExplainView({ method, version, res, params, consistencyOn, objectId, queryScope, resourceId }) {
+  const rows = [];
+  const code = (t) => <span style={{ fontFamily: MONO, color: C.resource }}>{t}</span>;
+
+  // method
+  rows.push({ tag: method, kind: "method", color: C.method, body:
+    method === "GET" ? <><b>Read</b> data without changing anything — safe to run repeatedly, no writes hit your tenant.</>
+    : method === "DELETE" ? <><b>Removes</b> the target object. Irreversible — there's no undo on a Graph DELETE.</>
+    : <><b>{method === "POST" ? "Creates or invokes" : "Modifies"}</b> — this sends a real change to your tenant when you Run it. Graph Builder stages writes for you to review first.</>
+  });
+
+  // version
+  rows.push({ tag: version, kind: "version", color: C.version, body:
+    version === "v1.0"
+      ? <>The <b>stable, production</b> endpoint — Microsoft guarantees its shape won't break. {code("beta")} exposes newer fields but can change without notice.</>
+      : <><b>Preview</b> surface — newer resources and fields live here, but Microsoft can change them without notice. Don't build production automation on {code("beta")}.</>
+  });
+
+  // resource
+  rows.push({ tag: "/" + res.path, kind: "resource", color: C.resource, body:
+    <>The collection you're querying{res.label && res.id !== "custom" ? <> — <b>{res.label}</b></> : ""}. {res.dir ? <>This is a <b>directory object</b>, so advanced query options need the consistency header (see below).</> : <>Returns a paged list of objects.</>}{GOTCHAS[res.id] ? <><br/><span style={{ color: C.method, fontSize: 12 }}>⚠ {GOTCHAS[res.id]}</span></> : null}</>
+  });
+
+  // object id
+  if (objectId.trim()) {
+    rows.push({ tag: "/{id}", kind: "single object", color: C.resource, body:
+      <>Fetches <b>one object</b> by id ({code(objectId.trim().slice(0, 28) + (objectId.trim().length > 28 ? "…" : ""))}) instead of the whole collection. Query params like {code("$filter")} don't apply when you target a single item.</>
+    });
+  }
+
+  // params
+  for (const p of params) {
+    if (p.type === "select") {
+      const cols = p.props || [];
+      rows.push({ tag: "$select", kind: "query param", color: paramColor("select"), body:
+        cols.length
+          ? <>Returns <b>only</b> these {cols.length} column{cols.length > 1 ? "s" : ""} instead of the full object: {cols.map((c, i) => <React.Fragment key={c}>{i ? ", " : ""}{code(c)}</React.Fragment>)}. Smaller, faster responses — always select what you actually need.</>
+          : <>Will trim the response to chosen columns once you pick some. Empty right now, so the full default object comes back.</>
+      });
+    } else if (p.type === "filter") {
+      const cls = (p.clauses || []).filter((c) => c.prop && c.val !== "");
+      rows.push({ tag: "$filter", kind: "query param", color: paramColor("filter"), body:
+        cls.length
+          ? <>Keeps only rows where {cls.map((c, i) => { const isBool = res?.bools?.includes(c.prop); return <React.Fragment key={i}>{i ? <> <b>{p.join}</b> </> : ""}{code(c.prop)} {OP_PHRASE[c.op] || c.op} {code(isBool || /^-?\d+$/.test((c.val||"").trim()) ? c.val : `'${c.val}'`)}</React.Fragment>; })}. {cls.some((c) => res?.bools?.includes(c.prop)) ? <>Booleans are written unquoted ({code("false")}, not {code("'false'")}).</> : ""}{consistencyOn && res?.dir ? <><br/><span style={{ color: C.method, fontSize: 12 }}>⚠ Filtering a directory object this way is an <b>advanced query</b> — Graph requires the {code("ConsistencyLevel: eventual")} header + {code("$count=true")}, both added automatically.</span></> : ""}</>
+          : <>Narrows the result set once you add a clause (property + operator + value).</>
+      });
+    } else if (p.type === "top") {
+      rows.push({ tag: `$top=${p.value || "?"}`, kind: "query param", color: paramColor("top"), body:
+        <>Returns at most <b>{p.value || "N"} rows per page</b>. If more match, the response carries an {code("@odata.nextLink")} — use <b>Load next page</b> or <b>Load all pages</b> to follow it.</>
+      });
+    } else if (p.type === "orderby") {
+      rows.push({ tag: "$orderby", kind: "query param", color: paramColor("orderby"), body:
+        <>Sorts the results by {code(p.prop || "a property")} {code(p.dir || "asc")}. <span style={{ color: C.dim }}>Note: many Intune endpoints reject {code("$orderby")} on most properties and will 400.</span></>
+      });
+    } else if (p.type === "count") {
+      rows.push({ tag: "$count=true", kind: "query param", color: paramColor("count"), body:
+        <>Asks Graph to include the <b>total match count</b> as {code("@odata.count")} in the response — even across pages.</>
+      });
+    } else if (p.type === "expand") {
+      rows.push({ tag: "$expand", kind: "query param", color: paramColor("expand"), body:
+        <>Joins in related data — {code(p.value || "a relationship")} — in the same call, so you don't need a second query. The table flattens it into columns like {code((p.value || "rel").split("(")[0] + ".displayName")}.</>
+      });
+    }
+  }
+
+  // auto-added consistency header
+  if (consistencyOn) {
+    rows.push({ tag: "ConsistencyLevel", kind: "header · auto-added", color: C.header, body:
+      <>{code("eventual")} opts into Graph's <b>advanced query</b> engine — what makes the filter/count/orderby above legal on a directory resource. Graph Builder adds it for you whenever it's required.</>
+    });
+  }
+
+  return (
+    <div>
+      {rows.map((r, i) => (
+        <div key={i} className="flex gap-3.5" style={{ padding: "12px 2px", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <div style={{ flexShrink: 0, width: 200 }}>
+            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, padding: "4px 9px", borderRadius: 6, display: "inline-block", color: C.ink, background: r.color, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tag}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.dim, marginTop: 6, display: "block" }}>{r.kind}</span>
+          </div>
+          <div style={{ flex: 1, fontSize: 13, lineHeight: 1.6, color: C.text, minWidth: 0 }}>{r.body}</div>
+        </div>
+      ))}
+      <div style={{ marginTop: 14, padding: "11px 13px", borderRadius: 10, background: hexA(C.ok, 0.08), border: `1px solid ${hexA(C.ok, 0.28)}`, fontSize: 12.5, lineHeight: 1.55, color: C.text }}>
+        🔑 <b>Permission needed:</b> {code(queryScope)} <span style={{ color: C.dim }}>({method === "GET" ? "read-only" : "read-write"}, delegated). Least-privilege scope for this query — requested on Run, consented once.</span>
+      </div>
+    </div>
+  );
+}
+
 function toCSV(rows) {
   const flat = rows.map((r) => flattenRow(r));
   const cols = [];
@@ -3695,6 +3787,13 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             </button>
           </div>
         </div>
+
+        {/* Explain this query — Learn mode narration of the current query */}
+        {learn && (
+          <Section title="📖 Explain this query" accent={C.param} right={<span style={{ fontSize: 10.5, color: C.dim }}>updates as you build · Learn mode</span>}>
+            <ExplainView method={method} version={version} res={res} params={params} consistencyOn={consistencyOn} objectId={objectId} queryScope={queryScope} resourceId={resourceId} />
+          </Section>
+        )}
 
         {/* REQUEST tabs */}
         <Section title="Request" accent={C.method}>
