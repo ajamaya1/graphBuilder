@@ -9,7 +9,7 @@
 <script>
 window.GRAPH_BLOCKS_CONFIG = { clientId: "4e5a962d-db81-4900-a557-22d252fb7ca1", tenantId: "" };
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -102,6 +102,7 @@ const THEMES = {
     ok: "#46C97E",
     ink: "#0D0F12",
     blockText: "#0D0F12",
+    toy: false,
   },
   light: {
     bg: "#F0F2F5",
@@ -126,6 +127,32 @@ const THEMES = {
     ok: "#1A8F4E",
     ink: "#FFFFFF",
     blockText: "#FFFFFF",
+    toy: false,
+  },
+  toy: {
+    bg: "#FFF9EE",
+    bgGradient: "radial-gradient(120% 80% at 50% -10%, #FFFEF7 0%, #FFF3D6 60%)",
+    surface: "#FFFFFF",
+    glass: "rgba(255,255,255,0.97)",
+    glassBorder: "#E0C97A",
+    glassHighlight: "inset 0 2px 0 rgba(255,255,255,0.9)",
+    glassShadow: "0 6px 0 #C8B560, 0 8px 16px rgba(0,0,0,0.12)",
+    fieldBg: "#FFFDF5",
+    btnBg: "#FFFFFF",
+    panel: "#FFF8E7",
+    line: "#F0DC9A",
+    text: "#1A1440",
+    dim: "#7060A0",
+    method: "#E8630A",    // woody orange
+    version: "#8B3EB5",   // buzz purple
+    resource: "#0B8FCC",  // infinity blue
+    param: "#D6280A",     // andy's red
+    header: "#E0338A",    // bo peep pink
+    danger: "#D62020",
+    ok: "#1D9E3A",        // rex green
+    ink: "#FFFFFF",
+    blockText: "#FFFFFF",
+    toy: true,
   },
 };
 let C = THEMES.dark;
@@ -183,7 +210,18 @@ async function* sseEvents(resp) {
 }
 
 // ── shared control styles (single source of truth) ──────────
-const field = (extra) => ({
+const field = (extra) => C.toy ? ({
+  background: "#FFFDF5",
+  color: C.text,
+  border: `3px solid ${C.line}`,
+  borderRadius: 16,
+  padding: "9px 13px",
+  fontSize: 13,
+  fontFamily: MONO,
+  outline: "none",
+  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.06)",
+  ...extra,
+}) : ({
   background: C.fieldBg,
   backdropFilter: "blur(8px)",
   WebkitBackdropFilter: "blur(8px)",
@@ -196,7 +234,17 @@ const field = (extra) => ({
   outline: "none",
   ...extra,
 });
-const ghostBtn = (accent, extra) => ({
+const ghostBtn = (accent, extra) => C.toy ? ({
+  background: accent ? hexA(accent, 0.12) : "#F5F0FF",
+  color: accent || C.dim,
+  border: `3px solid ${accent || C.line}`,
+  borderRadius: 14,
+  padding: "5px 13px",
+  fontSize: 12,
+  fontWeight: 800,
+  boxShadow: `0 4px 0 ${accent ? hexA(accent, 0.5) : "#C8B8E8"}`,
+  ...extra,
+}) : ({
   background: C.btnBg,
   backdropFilter: "blur(6px)",
   WebkitBackdropFilter: "blur(6px)",
@@ -212,12 +260,26 @@ const callout = (accent) => ({
   fontSize: 12,
   lineHeight: 1.55,
   padding: "9px 12px",
-  borderRadius: 7,
+  borderRadius: C.toy ? 14 : 7,
   background: hexA(accent, 0.1),
   color: accent,
-  border: `1px solid ${hexA(accent, 0.28)}`,
+  border: `${C.toy ? "3px" : "1px"} solid ${hexA(accent, C.toy ? 0.5 : 0.28)}`,
 });
-const primaryBtn = (bg, extra) => ({
+const primaryBtn = (bg, extra) => C.toy ? ({
+  width: "100%",
+  padding: "10px 16px",
+  borderRadius: 16,
+  fontSize: 14,
+  fontWeight: 900,
+  background: bg,
+  color: "#FFFFFF",
+  border: `3px solid rgba(0,0,0,0.15)`,
+  cursor: "pointer",
+  boxShadow: `0 6px 0 rgba(0,0,0,0.20), 0 8px 16px rgba(0,0,0,0.10)`,
+  letterSpacing: "0.02em",
+  textShadow: "0 1px 2px rgba(0,0,0,0.25)",
+  ...extra,
+}) : ({
   width: "100%",
   padding: "9px 14px",
   borderRadius: 8,
@@ -1167,12 +1229,13 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
 }
 
 function Section({ title, accent, children, right }) {
+  const toyCard = C.toy ? { border: `3px solid ${accent || C.line}`, borderRadius: 22, boxShadow: `0 6px 0 ${hexA(accent || "#888", 0.35)}, 0 10px 24px rgba(0,0,0,0.08)` } : {};
   return (
-    <div style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}` }}>
+    <div style={{ background: C.glass, backdropFilter: C.toy ? "none" : "blur(20px)", WebkitBackdropFilter: C.toy ? "none" : "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, ...toyCard }}>
       <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.glassBorder}` }}>
         <div className="flex items-center gap-2.5">
-          <span style={{ width: 3, height: 13, borderRadius: 2, background: accent, display: "inline-block" }} />
-          <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dim }}>
+          <span style={{ width: C.toy ? 8 : 3, height: C.toy ? 8 : 13, borderRadius: C.toy ? "50%" : 2, background: accent, display: "inline-block" }} />
+          <h2 style={{ fontSize: C.toy ? 12 : 11, fontWeight: C.toy ? 900 : 700, letterSpacing: "0.1em", textTransform: "uppercase", color: accent || C.dim }}>
             {title}
           </h2>
         </div>
@@ -1467,6 +1530,9 @@ function GraphBlocks() {
   C = THEMES[theme];
   if (typeof document !== "undefined") {
     document.body.style.backgroundColor = C.bg;
+    document.body.style.fontFamily = C.toy
+      ? "'Fredoka One', 'Nunito', 'Space Grotesk', system-ui, sans-serif"
+      : "'Space Grotesk', system-ui, sans-serif";
   }
   const CFG = (typeof window !== "undefined" && window.GRAPH_BLOCKS_CONFIG) || {};
   const [tenantId, setTenantId] = useState(CFG.tenantId || "");
@@ -2757,7 +2823,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
   }
 
   return (
-    <div className="min-h-screen pb-16" style={{ background: C.bgGradient, color: C.text, fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif", zoom: window.innerWidth >= 1024 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
+    <div className="min-h-screen pb-16" style={{ background: C.toy ? `${C.bgGradient}, radial-gradient(circle, ${hexA(C.resource, 0.08)} 1px, transparent 1px)` : C.bgGradient, backgroundSize: C.toy ? "auto, 28px 28px" : "auto", color: C.text, fontFamily: C.toy ? "'Fredoka One', 'Nunito', system-ui, sans-serif" : "system-ui, -apple-system, 'Segoe UI', sans-serif", zoom: window.innerWidth >= 1024 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
       <style>{`
         select option, select optgroup {
           background-color: ${C.surface};
@@ -2779,12 +2845,12 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title="Toggle light / dark mode"
+              onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "toy" : "dark")}
+              title="Toggle theme"
               className="transition-colors"
-              style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "transparent", color: C.dim, border: `1px solid ${C.line}` }}
+              style={{ padding: "6px 10px", borderRadius: C.toy ? 12 : 7, fontSize: 12, fontWeight: C.toy ? 800 : 600, background: C.toy ? "#FFF3D0" : "transparent", color: C.toy ? C.method : C.dim, border: `${C.toy ? "3px" : "1px"} solid ${C.toy ? C.method : C.line}`, boxShadow: C.toy ? `0 3px 0 ${hexA(C.method, 0.4)}` : "none" }}
             >
-              {theme === "dark" ? "☀" : "☾"}
+              {theme === "dark" ? "☀" : theme === "light" ? "🧸" : "☾"}
             </button>
             <button
               onClick={() => setLearn(!learn)}
