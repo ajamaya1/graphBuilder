@@ -149,22 +149,36 @@ const OPENAI_MODELS = [
 ];
 // minimal SSE reader for streaming responses — yields parsed JSON from each `data:` line
 async function* sseEvents(resp) {
+  if (!resp.body) throw new Error("No response stream — check network or proxy settings.");
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let nl;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (line.startsWith("data:")) {
-        const payload = line.slice(5).trim();
-        if (payload && payload !== "[DONE]") { try { yield JSON.parse(payload); } catch {} }
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line.startsWith("data:")) {
+          const payload = line.slice(5).trim();
+          if (payload && payload !== "[DONE]") {
+            let parsed; try { parsed = JSON.parse(payload); } catch { continue; }
+            yield parsed;
+          }
+        }
       }
     }
+    // flush any final line that arrived without a trailing newline
+    const last = buf.trim();
+    if (last.startsWith("data:")) {
+      const payload = last.slice(5).trim();
+      if (payload && payload !== "[DONE]") { try { yield JSON.parse(payload); } catch {} }
+    }
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -1756,6 +1770,21 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     return lines.join("\n");
   }, [res, method, url, consistencyOn, body, objectId, chainPath, chainLimit, version]);
 
+  // REST snippet: Invoke-RestMethod (works with a raw bearer token — no SDK required)
+  const restSnippet = useMemo(() => {
+    const tokenLine = lastToken ? `$token = '${lastToken}'` : `$token = (Get-MgContext).AccessToken  # or paste your bearer token here`;
+    const hdrs = [`    Authorization = "Bearer \$token"`];
+    if (consistencyOn) hdrs.push(`    ConsistencyLevel = 'eventual'`);
+    customHeaders.filter((h) => h.key.trim()).forEach((h) => hdrs.push(`    '${h.key.trim()}' = '${h.value}'`));
+    const hdrBlock = `$headers = @{\n${hdrs.join("\n")}\n}`;
+    const lines = [tokenLine, hdrBlock];
+    let call = `Invoke-RestMethod -Method ${method} -Uri '${url}' -Headers $headers`;
+    if (method === "POST" || method === "PATCH") call += ` -Body '${body.replace(/\n/g, " ")}' -ContentType 'application/json'`;
+    lines.push(call + (method === "GET" && !objectId ? " |" : ""));
+    if (method === "GET" && !objectId) lines.push("    Select-Object -ExpandProperty value");
+    return lines.join("\n");
+  }, [lastToken, method, url, consistencyOn, body, objectId, customHeaders]);
+
   const sdkCmd = useMemo(() => {
     const m = SDK[res.id];
     if (!m) return "";
@@ -2056,7 +2085,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
       let pages = 0; const MAX_PAGES = 50;
       while (link && pages < MAX_PAGES) {
         const r = await fetch(link, { headers });
-        if (r.status === 429) { await new Promise((res) => setTimeout(res, (parseInt(r.headers.get("Retry-After") || "2", 10)) * 1000)); continue; }
+        if (r.status === 429) { await r.body?.cancel().catch(() => {}); await new Promise((res) => setTimeout(res, (parseInt(r.headers.get("Retry-After") || "2", 10)) * 1000)); pages++; continue; }
         let d = null; try { d = JSON.parse(await r.text()); } catch { d = {}; }
         if (!r.ok) throw new Error(d?.error?.message || `HTTP ${r.status}`);
         if (Array.isArray(d?.value)) acc = acc.concat(d.value);
@@ -2205,6 +2234,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
       let link = data["@odata.nextLink"]; let pages = 0;
       while (link && rows.length < 1000 && pages < 10) {
         const nr = await fetch(link, { method: "GET", headers });
+        if (nr.status === 429) { await nr.body?.cancel().catch(() => {}); await new Promise((res) => setTimeout(res, (parseInt(nr.headers.get("Retry-After") || "2", 10)) * 1000)); pages++; continue; }
         if (!nr.ok) break;
         let nd = null; try { nd = JSON.parse(await nr.text()); } catch { break; }
         if (Array.isArray(nd?.value)) rows = rows.concat(nd.value);
@@ -2296,12 +2326,16 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     asstAbortRef.current = ctrl;
     const toolDesc = "Run a Microsoft Graph query. GET executes live and returns results; POST/PATCH/DELETE are staged in the builder for the user to review and run.";
     let liveText = "";
+    // batch token renders via rAF — avoids 1 re-render per token on long responses
+    let rafId = null;
+    const flushText = (snapshot) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => { setAsstMsgs([...turns, { role: "assistant", text: snapshot, calls: [] }]); rafId = null; });
+    };
     try {
       for (let hop = 0; hop < 8; hop++) {
         liveText = "";
         let calls = [];
-        // show an empty assistant bubble that fills in as tokens stream
-        setAsstMsgs([...turns, { role: "assistant", text: "", calls: [] }]);
         if (provider === "anthropic") {
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST", signal: ctrl.signal,
@@ -2314,11 +2348,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") {
               toolBlocks[ev.index] = { id: ev.content_block.id, name: ev.content_block.name, json: "" };
             } else if (ev.type === "content_block_delta") {
-              if (ev.delta?.type === "text_delta") { liveText += ev.delta.text; setAsstMsgs([...turns, { role: "assistant", text: liveText, calls: [] }]); }
+              if (ev.delta?.type === "text_delta") { liveText += ev.delta.text; flushText(liveText); }
               else if (ev.delta?.type === "input_json_delta" && toolBlocks[ev.index]) { toolBlocks[ev.index].json += ev.delta.partial_json; }
             }
           }
-          calls = Object.values(toolBlocks).map((b) => { let input = {}; try { input = b.json ? JSON.parse(b.json) : {}; } catch {} return { id: b.id, name: b.name, input }; });
+          calls = Object.values(toolBlocks).map((b) => {
+            if (!b.json) return null;
+            try { return { id: b.id, name: b.name, input: JSON.parse(b.json) }; }
+            catch { return { id: b.id, name: b.name, input: null, _parseError: true }; }
+          }).filter(Boolean);
         } else {
           const resp = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST", signal: ctrl.signal,
@@ -2329,17 +2367,23 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           const tc = {};
           for await (const ev of sseEvents(resp)) {
             const d = ev.choices?.[0]?.delta; if (!d) continue;
-            if (d.content) { liveText += d.content; setAsstMsgs([...turns, { role: "assistant", text: liveText, calls: [] }]); }
+            if (d.content) { liveText += d.content; flushText(liveText); }
             if (Array.isArray(d.tool_calls)) for (const t of d.tool_calls) { const i = t.index ?? 0; const cur = tc[i] || { id: "", name: "", args: "" }; if (t.id) cur.id = t.id; if (t.function?.name) cur.name = t.function.name; if (t.function?.arguments) cur.args += t.function.arguments; tc[i] = cur; }
           }
-          calls = Object.values(tc).map((t) => { let input = {}; try { input = t.args ? JSON.parse(t.args) : {}; } catch {} return { id: t.id, name: t.name, input }; });
+          calls = Object.values(tc).map((t) => {
+            if (!t.args) return null;
+            try { return { id: t.id, name: t.name, input: JSON.parse(t.args) }; }
+            catch { return { id: t.id, name: t.name, input: null, _parseError: true }; }
+          }).filter(Boolean);
         }
         turns = [...turns, { role: "assistant", text: liveText, calls }];
         setAsstMsgs(turns);
         if (calls.length) {
           const results = [];
           for (const c of calls) {
-            let out; try { out = await execGraphQuery(c.input); } catch (e) { out = { error: e.message }; }
+            let out;
+            if (c._parseError) { out = { error: "Tool input JSON was malformed in the stream — please retry." }; }
+            else { try { out = await execGraphQuery(c.input); } catch (e) { out = { error: e.message }; } }
             results.push({ id: c.id, output: JSON.stringify(out).slice(0, 7000) });
           }
           turns = [...turns, { role: "tool", results }];
@@ -2352,7 +2396,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
       if (e.name === "AbortError") { setAsstMsgs([...turns, { role: "assistant", text: liveText || "_(stopped)_", calls: [] }]); }
       else setAsstError(e.message);
     }
-    finally { setAsstLoading(false); asstAbortRef.current = null; }
+    finally { if (rafId) cancelAnimationFrame(rafId); setAsstLoading(false); asstAbortRef.current = null; }
   }
 
   // render assistant text with ``` fenced code blocks (copy button + monospace)
@@ -3072,7 +3116,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   <textarea
                     value={asstInput}
                     onChange={(e) => setAsstInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); asstSend(); } }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!asstLoading) asstSend(); } }}
                     placeholder={(aiProvider === "openai" ? aiKeyOpenAI.trim() : aiKey.trim()) ? "Ask anything… (Enter to send, Shift+Enter for newline)" : `Add your ${aiProvider === "openai" ? "OpenAI" : "Claude"} API key above to start`}
                     rows={2}
                     className="flex-1"
@@ -3671,6 +3715,13 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 ) : (
                   <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{`Find-MgGraphCommand -Uri '/${path}' -Method ${method} -ApiVersion ${version} |\n    Select-Object Command, Permissions`}</pre>
                 )}
+              </div>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.ok }}>REST · Invoke-RestMethod {lastToken ? <span style={{ color: C.ok, fontWeight: 400, textTransform: "none", fontSize: 10 }}>· token from last run</span> : <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", fontSize: 10 }}>· run a query to populate token</span>}</span>
+                  <div className="flex gap-1.5"><Ps1Btn text={restSnippet} name={`graph-rest-${res.path.split("/").pop() || "query"}`} title={`REST — ${method} ${url}`} /><CopyBtn text={restSnippet} /></div>
+                </div>
+                <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text }}>{restSnippet}</pre>
               </div>
             </div>
           )}
