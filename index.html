@@ -38,9 +38,12 @@ window.GRAPH_BLOCKS_CONFIG = { clientId: "4e5a962d-db81-4900-a557-22d252fb7ca1",
 <script src="graph-paths.js"></script>
 <script src="graph-props.js"></script>
 <style>
-body{margin:0;background:#0D0F12;font-family:'Space Grotesk',system-ui,sans-serif;overflow-x:hidden;min-height:100vh;background-image:radial-gradient(60% 50% at 15% 0%, rgba(57,211,180,0.06), transparent 70%),radial-gradient(50% 45% at 90% 100%, rgba(91,157,240,0.06), transparent 70%)}
+body{margin:0;background:#0D0F12;font-family:'Space Grotesk',system-ui,sans-serif;overflow-x:hidden;min-height:100vh;background-image:radial-gradient(70% 55% at 15% 0%, rgba(57,211,180,0.07), transparent 70%),radial-gradient(55% 48% at 90% 100%, rgba(91,157,240,0.07), transparent 70%)}
 input,select,textarea,button{font-family:inherit}
+*{box-sizing:border-box}
+button{cursor:pointer}
 .glass-orb{display:none}
+::selection{background:rgba(57,211,180,0.25);color:inherit}
 @supports not (backdrop-filter: blur(1px)){
   .glass-bg{display:none}
 }
@@ -81,16 +84,16 @@ const LS = {
 const THEMES = {
   dark: {
     bg: "#0D0F12",
-    bgGradient: "radial-gradient(120% 80% at 50% -10%, #161b22 0%, #0D0F12 60%)",
-    surface: "#15181E",
-    glass: "rgba(24,28,35,0.92)",
-    glassBorder: "rgba(255,255,255,0.07)",
-    glassHighlight: "inset 0 1px 0 rgba(255,255,255,0.04)",
-    glassShadow: "0 4px 30px rgba(0,0,0,0.25)",
-    fieldBg: "rgba(27,31,38,0.92)",
-    btnBg: "rgba(40,45,54,0.9)",
-    panel: "#1B1F26",
-    line: "#262B33",
+    bgGradient: "radial-gradient(130% 80% at 50% -10%, #161c24 0%, #0D0F12 60%)",
+    surface: "#13161C",
+    glass: "rgba(22,26,34,0.94)",
+    glassBorder: "rgba(255,255,255,0.09)",
+    glassHighlight: "inset 0 1px 0 rgba(255,255,255,0.07)",
+    glassShadow: "0 4px 32px rgba(0,0,0,0.30)",
+    fieldBg: "rgba(25,30,38,0.94)",
+    btnBg: "rgba(38,44,54,0.9)",
+    panel: "#191D25",
+    line: "#252B35",
     text: "#E8EBF0",
     dim: "#7A828E",
     method: "#E8A04B",
@@ -227,11 +230,12 @@ const field = (extra) => C.toy ? ({
   WebkitBackdropFilter: "blur(8px)",
   color: C.text,
   border: `1px solid ${C.glassBorder}`,
-  borderRadius: 9,
-  padding: "8px 11px",
+  borderRadius: 10,
+  padding: "8px 12px",
   fontSize: 13,
   fontFamily: MONO,
   outline: "none",
+  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.14)",
   ...extra,
 });
 const ghostBtn = (accent, extra) => C.toy ? ({
@@ -242,6 +246,7 @@ const ghostBtn = (accent, extra) => C.toy ? ({
   padding: "5px 13px",
   fontSize: 12,
   fontWeight: 800,
+  cursor: "pointer",
   boxShadow: `0 4px 0 ${accent ? hexA(accent, 0.5) : "#C8B8E8"}`,
   ...extra,
 }) : ({
@@ -250,17 +255,18 @@ const ghostBtn = (accent, extra) => C.toy ? ({
   WebkitBackdropFilter: "blur(6px)",
   color: accent || C.dim,
   border: `1px solid ${accent ? hexA(accent, 0.3) : C.glassBorder}`,
-  borderRadius: 9,
-  padding: "5px 11px",
+  borderRadius: 8,
+  padding: "5px 12px",
   fontSize: 12,
   fontWeight: 600,
+  cursor: "pointer",
   ...extra,
 });
 const callout = (accent) => ({
   fontSize: 12,
   lineHeight: 1.55,
-  padding: "9px 12px",
-  borderRadius: C.toy ? 14 : 7,
+  padding: "9px 13px",
+  borderRadius: C.toy ? 14 : 8,
   background: hexA(accent, 0.1),
   color: accent,
   border: `${C.toy ? "3px" : "1px"} solid ${hexA(accent, C.toy ? 0.5 : 0.28)}`,
@@ -282,13 +288,14 @@ const primaryBtn = (bg, extra) => C.toy ? ({
 }) : ({
   width: "100%",
   padding: "9px 14px",
-  borderRadius: 8,
+  borderRadius: 9,
   fontSize: 13.5,
   fontWeight: 700,
   background: bg,
   color: C.ink,
   border: "none",
   cursor: "pointer",
+  letterSpacing: "0.01em",
   ...extra,
 });
 
@@ -1124,16 +1131,17 @@ function Tabs({ tabs, active, onChange }) {
           key={t.id}
           onClick={() => onChange(t.id)}
           style={{
-            padding: "8px 13px",
+            padding: "8px 14px",
             fontSize: 12.5,
             fontWeight: active === t.id ? 700 : 500,
             color: active === t.id ? C.text : C.dim,
             background: "none",
             border: "none",
-            borderBottom: `2px solid ${active === t.id ? C.resource : "transparent"}`,
+            borderBottom: `2.5px solid ${active === t.id ? C.resource : "transparent"}`,
             marginBottom: -1,
             cursor: "pointer",
             whiteSpace: "nowrap",
+            letterSpacing: active === t.id ? "0.005em" : "inherit",
           }}
         >
           {t.label}{t.badge != null && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: C.resource, background: hexA(C.resource, 0.14), borderRadius: 4, padding: "1px 6px" }}>{t.badge}</span>}
@@ -1149,14 +1157,16 @@ function Chip({ active, color, children, onClick, title }) {
       onClick={onClick}
       title={title}
       style={{
-        padding: "5px 11px",
-        borderRadius: 6,
+        padding: "5px 12px",
+        borderRadius: 7,
         fontSize: 12.5,
         fontWeight: 600,
         fontFamily: MONO,
-        background: active ? color : "transparent",
+        cursor: "pointer",
+        background: active ? color : hexA(color, 0.07),
         color: active ? C.ink : C.dim,
-        border: `1px solid ${active ? color : C.line}`,
+        border: `1px solid ${active ? color : hexA(color, 0.22)}`,
+        boxShadow: active ? `inset 0 1px 0 rgba(255,255,255,0.18)` : "none",
       }}
     >
       {children}
@@ -1182,11 +1192,13 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
             background: color,
             border: `1px solid ${color}`,
             color: C.blockText,
-            borderRadius: 6,
-            padding: "4px 12px",
+            borderRadius: 7,
+            padding: "5px 13px",
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), 0 1px 3px rgba(0,0,0,0.18)`,
+            cursor: "pointer",
           }}
         >
-          <span className="font-semibold uppercase" style={{ opacity: 0.62, fontSize: 8.5, letterSpacing: "0.08em", lineHeight: 1.3 }}>
+          <span className="font-semibold uppercase" style={{ opacity: 0.55, fontSize: 8.5, letterSpacing: "0.09em", lineHeight: 1.3 }}>
             {label}{options && " ▾"}
           </span>
           <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, maxWidth: "min(520px, 72vw)", wordBreak: "break-word", textAlign: "left", lineHeight: 1.15 }}>
@@ -1218,7 +1230,7 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
       {onRemove && (
         <button
           onClick={onRemove}
-          style={{ marginLeft: 3, width: 16, height: 16, borderRadius: 4, fontSize: 12, lineHeight: 1, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, flexShrink: 0 }}
+          style={{ marginLeft: 4, width: 18, height: 18, borderRadius: 5, fontSize: 13, lineHeight: 1, background: hexA(C.dim, 0.1), color: C.dim, border: `1px solid ${C.line}`, flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
           title="Remove block"
         >
           ×
@@ -1231,11 +1243,11 @@ function Block({ color, label, value, onClick, onRemove, first, options, selecte
 function Section({ title, accent, children, right }) {
   const toyCard = C.toy ? { border: `3px solid ${accent || C.line}`, borderRadius: 22, boxShadow: `0 6px 0 ${hexA(accent || "#888", 0.35)}, 0 10px 24px rgba(0,0,0,0.08)` } : {};
   return (
-    <div style={{ background: C.glass, backdropFilter: C.toy ? "none" : "blur(20px)", WebkitBackdropFilter: C.toy ? "none" : "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, ...toyCard }}>
+    <div style={{ background: C.glass, backdropFilter: C.toy ? "none" : "blur(20px)", WebkitBackdropFilter: C.toy ? "none" : "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 16, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, ...toyCard }}>
       <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${C.glassBorder}` }}>
         <div className="flex items-center gap-2.5">
-          <span style={{ width: C.toy ? 8 : 3, height: C.toy ? 8 : 13, borderRadius: C.toy ? "50%" : 2, background: accent, display: "inline-block" }} />
-          <h2 style={{ fontSize: C.toy ? 12 : 11, fontWeight: C.toy ? 900 : 700, letterSpacing: "0.1em", textTransform: "uppercase", color: accent || C.dim }}>
+          <span style={{ width: C.toy ? 8 : 4, height: C.toy ? 8 : 16, borderRadius: C.toy ? "50%" : 3, background: accent, display: "inline-block" }} />
+          <h2 style={{ fontSize: C.toy ? 12 : 11.5, fontWeight: C.toy ? 900 : 700, letterSpacing: "0.08em", textTransform: "uppercase", color: accent || C.dim, fontFamily: SANS }}>
             {title}
           </h2>
         </div>
@@ -2823,7 +2835,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
   }
 
   return (
-    <div className="min-h-screen pb-16" style={{ background: C.toy ? `${C.bgGradient}, radial-gradient(circle, ${hexA(C.resource, 0.08)} 1px, transparent 1px)` : C.bgGradient, backgroundSize: C.toy ? "auto, 28px 28px" : "auto", color: C.text, fontFamily: C.toy ? "'Fredoka One', 'Nunito', system-ui, sans-serif" : "system-ui, -apple-system, 'Segoe UI', sans-serif", zoom: window.innerWidth >= 1024 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
+    <div className="min-h-screen pb-16" style={{ background: C.toy ? `${C.bgGradient}, radial-gradient(circle, ${hexA(C.resource, 0.08)} 1px, transparent 1px)` : C.bgGradient, backgroundSize: C.toy ? "auto, 28px 28px" : "auto", color: C.text, fontFamily: C.toy ? "'Fredoka One', 'Nunito', system-ui, sans-serif" : SANS, zoom: window.innerWidth >= 1024 ? 0.9 : 1, position: "relative", zIndex: 1 }}>
       <style>{`
         select option, select optgroup {
           background-color: ${C.surface};
@@ -2836,69 +2848,76 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         {/* header */}
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6 pb-5" style={{ borderBottom: `1px solid ${C.glassBorder}` }}>
           <div className="flex items-baseline gap-3">
-            <h1 style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.01em", color: C.text }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", color: C.text, fontFamily: SANS }}>
               Graph Builder
             </h1>
-            <span style={{ fontFamily: MONO, fontSize: 11, color: C.dim, letterSpacing: "0.02em" }}>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: C.dim, letterSpacing: "0.03em" }}>
               microsoft graph · visual query console
             </span>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center flex-wrap" style={{ gap: "6px" }}>
+            {/* utility */}
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "toy" : "dark")}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               title="Toggle theme"
               className="transition-colors"
-              style={{ padding: "6px 10px", borderRadius: C.toy ? 12 : 7, fontSize: 12, fontWeight: C.toy ? 800 : 600, background: C.toy ? "#FFF3D0" : "transparent", color: C.toy ? C.method : C.dim, border: `${C.toy ? "3px" : "1px"} solid ${C.toy ? C.method : C.line}`, boxShadow: C.toy ? `0 3px 0 ${hexA(C.method, 0.4)}` : "none" }}
+              style={{ padding: "6px 10px", borderRadius: 8, fontSize: 14, fontWeight: 500, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, cursor: "pointer" }}
             >
-              {theme === "dark" ? "☀" : theme === "light" ? "🧸" : "☾"}
+              {theme === "dark" ? "☀" : "☾"}
             </button>
             <button
               onClick={() => setLearn(!learn)}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: learn ? hexA(C.param, 0.14) : "transparent", color: learn ? C.param : C.dim, border: `1px solid ${learn ? hexA(C.param, 0.4) : C.line}` }}
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: learn ? hexA(C.param, 0.14) : "transparent", color: learn ? C.param : C.dim, border: `1px solid ${learn ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
             >
-              Learn mode {learn ? "on" : "off"}
+              {learn ? "📖 Learn on" : "📖 Learn"}
             </button>
+            {/* divider */}
+            <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
+            {/* primary actions */}
             <button
               onClick={() => { setTemplOpen(!templOpen); setAiOpen(false); setHistOpen(false); setHelpOpen(false); }}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: templOpen ? hexA(C.resource, 0.14) : "transparent", color: templOpen ? C.resource : C.dim, border: `1px solid ${templOpen ? hexA(C.resource, 0.4) : C.line}` }}
+              style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: templOpen ? hexA(C.resource, 0.16) : hexA(C.resource, 0.06), color: templOpen ? C.resource : C.dim, border: `1px solid ${templOpen ? hexA(C.resource, 0.45) : hexA(C.resource, 0.18)}`, cursor: "pointer" }}
             >
               📋 Templates
             </button>
             <button
               onClick={() => { setAiOpen(!aiOpen); setTemplOpen(false); setHistOpen(false); setHelpOpen(false); setAiError(null); }}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: aiOpen ? hexA(C.resource, 0.14) : "transparent", color: aiOpen ? C.resource : C.dim, border: `1px solid ${aiOpen ? hexA(C.resource, 0.4) : C.line}` }}
+              style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: aiOpen ? hexA(C.resource, 0.16) : hexA(C.resource, 0.06), color: aiOpen ? C.resource : C.dim, border: `1px solid ${aiOpen ? hexA(C.resource, 0.45) : hexA(C.resource, 0.18)}`, cursor: "pointer" }}
             >
               ✨ AI
             </button>
             <button
               onClick={() => { setAsstOpen(!asstOpen); setAiOpen(false); setTemplOpen(false); setHistOpen(false); setHelpOpen(false); setDashOpen(null); setAsstError(null); }}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: asstOpen ? hexA(C.version, 0.16) : "transparent", color: asstOpen ? C.version : C.dim, border: `1px solid ${asstOpen ? hexA(C.version, 0.4) : C.line}` }}
+              style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: asstOpen ? hexA(C.version, 0.18) : hexA(C.version, 0.06), color: asstOpen ? C.version : C.dim, border: `1px solid ${asstOpen ? hexA(C.version, 0.45) : hexA(C.version, 0.18)}`, cursor: "pointer" }}
               title="Chat with Claude — build a PowerShell script and run live read-only queries"
             >
               🛠 Assistant
             </button>
+            {/* divider */}
+            <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
+            {/* secondary */}
             <button
               onClick={() => { setHistOpen(!histOpen); setHelpOpen(false); setAiOpen(false); }}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}` }}
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}`, cursor: "pointer" }}
             >
               History{history.length ? ` (${history.length})` : ""}
             </button>
             <button
               onClick={() => { setHelpOpen(!helpOpen); setHistOpen(false); }}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}` }}
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
             >
-              ? Help
+              Help
             </button>
             <button
               onClick={() => openDashboard("sysadmin")}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: dashOpen === "sysadmin" ? hexA(C.ok, 0.14) : "transparent", color: dashOpen === "sysadmin" ? C.ok : C.dim, border: `1px solid ${dashOpen === "sysadmin" ? hexA(C.ok, 0.4) : C.line}` }}
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "sysadmin" ? hexA(C.ok, 0.14) : "transparent", color: dashOpen === "sysadmin" ? C.ok : C.dim, border: `1px solid ${dashOpen === "sysadmin" ? hexA(C.ok, 0.4) : C.line}`, cursor: "pointer" }}
               title="Operational health dashboard"
             >
               📊 SysAdmin
@@ -2906,19 +2925,21 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             <button
               onClick={() => openDashboard("exec")}
               className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: dashOpen === "exec" ? hexA(C.header, 0.14) : "transparent", color: dashOpen === "exec" ? C.header : C.dim, border: `1px solid ${dashOpen === "exec" ? hexA(C.header, 0.4) : C.line}` }}
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "exec" ? hexA(C.header, 0.14) : "transparent", color: dashOpen === "exec" ? C.header : C.dim, border: `1px solid ${dashOpen === "exec" ? hexA(C.header, 0.4) : C.line}`, cursor: "pointer" }}
               title="Executive KPI dashboard"
             >
               📈 Executive
             </button>
+            {/* divider */}
+            <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
             {account ? (
-              <div className="flex items-center gap-2" style={{ padding: "5px 11px", borderRadius: 9, border: `1px solid ${C.glassBorder}`, background: C.glass, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-                <span className="w-2 h-2 rounded-full" style={{ background: C.ok }} />
+              <div className="flex items-center gap-2" style={{ padding: "5px 11px", borderRadius: 10, border: `1px solid ${C.glassBorder}`, background: C.glass, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: C.ok, boxShadow: `0 0 6px ${hexA(C.ok, 0.6)}` }} />
                 <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.username}</span>
                 <button onClick={signOut} style={{ fontSize: 11, fontWeight: 600, color: C.dim, background: "none", border: "none", cursor: "pointer" }}>Sign out</button>
               </div>
             ) : (
-              <button onClick={() => setSignInModal(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 7, fontSize: 12.5, fontWeight: 700, background: "#2F2F2F", color: "#fff", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setSignInModal(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, background: theme === "dark" ? "#23272F" : "#1F1F1F", color: "#fff", border: `1px solid ${theme === "dark" ? "#353A45" : "#333"}`, cursor: "pointer" }}>
                 <svg width="14" height="14" viewBox="0 0 21 21" aria-hidden="true">
                   <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
                   <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
@@ -3299,7 +3320,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         )}
 
 
-        <div className="space-y-5 pb-16 px-4" style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <div className="space-y-5 pb-16 px-4" style={{ maxWidth: 1180, margin: "0 auto" }}>
 
         {/* canvas */}
         <Section
@@ -3499,9 +3520,9 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
 
 
         {/* request URL bar */}
-        <div className="flex items-center gap-2 flex-wrap" style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 12, padding: "8px 12px", boxShadow: C.glassShadow }}>
-          <div className="flex items-center gap-2" style={{ flex: "1 1 240px", minWidth: 0 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0 }}>{method}</span>
+        <div className="flex items-center gap-2 flex-wrap" style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 20, padding: "10px 14px", boxShadow: `${C.glassShadow}, ${C.glassHighlight}` }}>
+          <div className="flex items-center gap-3" style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0, fontFamily: MONO, background: method === "GET" ? hexA(C.method, 0.12) : hexA(C.danger, 0.12), padding: "2px 7px", borderRadius: 5 }}>{method}</span>
             <code className="flex-1 text-xs" style={{ fontFamily: MONO, color: C.resource, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>{url}</code>
           </div>
           <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
@@ -3534,12 +3555,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               disabled={running || betaWarn || !account}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
-                padding: "5px 16px", borderRadius: 7, fontSize: 12.5, fontWeight: 700,
+                padding: "6px 20px", borderRadius: 20, fontSize: 12.5, fontWeight: 700,
                 background: !account ? C.panel : (method === "GET" ? C.ok : C.danger),
-                color: !account ? C.dim : C.ink,
+                color: !account ? C.dim : "#fff",
                 border: !account ? `1px solid ${C.line}` : "none",
                 cursor: running || betaWarn || !account ? "default" : "pointer",
                 opacity: running || betaWarn ? 0.5 : 1,
+                letterSpacing: "0.01em",
+                boxShadow: !account || running || betaWarn ? "none" : `0 0 0 1px ${hexA(method === "GET" ? C.ok : C.danger, 0.5)}, 0 2px 8px ${hexA(method === "GET" ? C.ok : C.danger, 0.25)}`,
               }}
               title={!account ? "Sign in (top right) to run" : `Run ${method}`}
             >
