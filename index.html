@@ -1294,6 +1294,131 @@ function flattenRow(obj, prefix, out) {
   return out;
 }
 
+// ── Charts: auto-detect categorical columns and visualize the result set ──
+const chartColors = (C) => [C.param, C.resource, C.version, C.method, C.header, C.ok, C.danger, "#6FD0E8", "#C9A0FF", "#F0B36B", "#A0E8C0", "#E89BB8"];
+// states that read as "bad" so we can tint them red in the distribution
+const NEGATIVE_VALUES = new Set(["noncompliant", "false", "disabled", "blocked", "atrisk", "high", "expired", "inactive", "error", "failed", "unknown", "conflict", "notapplicable", "quarantined"]);
+
+function ChartsView({ rows, C }) {
+  const flat = useMemo(() => rows.map((r) => flattenRow(r)), [rows]);
+  // candidate group-by columns: categorical-ish (low cardinality, well populated, not unique ids)
+  const candidates = useMemo(() => {
+    if (!flat.length) return [];
+    const keys = [];
+    for (const r of flat) for (const k of Object.keys(r)) if (!keys.includes(k)) keys.push(k);
+    return keys.map((k) => {
+      const vals = flat.map((r) => r[k]).filter((v) => v != null && v !== "");
+      const distinct = new Set(vals.map((v) => String(v)));
+      return { key: k, distinct: distinct.size, filled: vals.length };
+    }).filter((c) => c.distinct >= 1 && c.distinct <= 40 && c.distinct < flat.length)
+      .sort((a, b) => {
+        const sweet = (c) => (c.distinct >= 2 && c.distinct <= 12 ? 0 : 1); // prefer 2–12 distinct
+        return sweet(a) - sweet(b) || a.distinct - b.distinct || b.filled - a.filled;
+      });
+  }, [flat]);
+
+  const [groupBy, setGroupBy] = useState(null);
+  const activeCol = groupBy && candidates.some((c) => c.key === groupBy) ? groupBy : (candidates[0] && candidates[0].key) || null;
+
+  const dist = useMemo(() => {
+    if (!activeCol) return [];
+    const counts = {};
+    for (const r of flat) {
+      let v = r[activeCol];
+      v = v == null || v === "" ? "—" : String(v);
+      counts[v] = (counts[v] || 0) + 1;
+    }
+    return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
+  }, [flat, activeCol]);
+
+  if (!flat.length) return <p className="text-xs py-6 text-center" style={{ color: C.dim }}>Run a query that returns rows to chart them.</p>;
+  if (!activeCol) return <p className="text-xs py-6 text-center" style={{ color: C.dim }}>No categorical columns to group by — every column is unique or empty. Try a query with a status/state/type column.</p>;
+
+  const total = flat.length;
+  const palette = chartColors(C);
+  const top = dist.slice(0, 12);
+  const otherCount = dist.slice(12).reduce((s, d) => s + d.count, 0);
+  const segments = otherCount ? [...top, { label: `+${dist.length - 12} more`, count: otherCount, _other: true }] : top;
+  const colorFor = (i, label) => (label && NEGATIVE_VALUES.has(String(label).toLowerCase()) ? C.danger : palette[i % palette.length]);
+  const maxCount = Math.max(...segments.map((s) => s.count));
+
+  // conic-gradient stops for the donut
+  let acc = 0;
+  const stops = segments.map((s, i) => {
+    const start = (acc / total) * 100; acc += s.count;
+    const end = (acc / total) * 100;
+    return `${colorFor(i, s._other ? null : s.label)} ${start}% ${end}%`;
+  }).join(", ");
+  const pct = (n) => Math.round((n / total) * 100);
+
+  return (
+    <div>
+      {/* group-by selector */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span style={{ fontSize: 11, color: C.dim }}>Group by</span>
+        <select value={activeCol} onChange={(e) => setGroupBy(e.target.value)} style={{ ...field(), padding: "5px 9px", fontSize: 12, width: "auto", maxWidth: 280 }}>
+          {candidates.map((c) => <option key={c.key} value={c.key}>{c.key} ({c.distinct})</option>)}
+        </select>
+        <span style={{ fontSize: 10.5, color: C.dim, marginLeft: "auto" }}>{total} rows · {dist.length} distinct values</span>
+      </div>
+
+      {/* KPI tiles */}
+      <div className="flex gap-2.5 mb-5 flex-wrap">
+        <div style={{ flex: "1 1 120px", padding: "12px 14px", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12 }}>
+          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: MONO, color: C.resource, lineHeight: 1 }}>{total.toLocaleString()}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: C.dim, marginTop: 4 }}>Total rows</div>
+        </div>
+        <div style={{ flex: "1 1 120px", padding: "12px 14px", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12 }}>
+          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: MONO, color: C.param, lineHeight: 1 }}>{dist.length}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: C.dim, marginTop: 4 }}>Distinct values</div>
+        </div>
+        <div style={{ flex: "2 1 200px", padding: "12px 14px", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, minWidth: 0 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, fontFamily: MONO, color: colorFor(0, dist[0].label), lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dist[0].label}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: C.dim, marginTop: 4 }}>Most common · {dist[0].count} ({pct(dist[0].count)}%)</div>
+        </div>
+      </div>
+
+      <div className="flex gap-7 flex-wrap">
+        {/* donut */}
+        <div style={{ flex: "1 1 240px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.dim, marginBottom: 14 }}>{activeCol}</div>
+          <div className="flex items-center gap-5 flex-wrap">
+            <div style={{ width: 150, height: 150, borderRadius: "50%", background: `conic-gradient(${stops})`, position: "relative", flexShrink: 0 }}>
+              <div style={{ position: "absolute", inset: 32, borderRadius: "50%", background: C.glass, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                <span style={{ fontSize: 22, fontWeight: 800, fontFamily: MONO, color: C.text }}>{total.toLocaleString()}</span>
+                <span style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: "0.04em" }}>rows</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5" style={{ fontSize: 12, minWidth: 0 }}>
+              {segments.map((s, i) => (
+                <span key={s.label} className="flex items-center gap-2" style={{ color: C.text }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: colorFor(i, s._other ? null : s.label), display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }}>{s.label}</span>
+                  <span style={{ color: C.dim, flexShrink: 0 }}>— {s.count} ({pct(s.count)}%)</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* bar chart */}
+        <div style={{ flex: "1 1 320px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.dim, marginBottom: 14 }}>Distribution</div>
+          {segments.map((s, i) => (
+            <div key={s.label} className="flex items-center gap-2.5" style={{ marginBottom: 9 }}>
+              <span style={{ width: 130, fontSize: 11, fontFamily: MONO, color: C.dim, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }} title={s.label}>{s.label}</span>
+              <div style={{ flex: 1, height: 22, background: C.panel, borderRadius: 6, overflow: "hidden", border: `1px solid ${C.line}` }}>
+                <div style={{ height: "100%", width: `${Math.max(6, (s.count / maxCount) * 100)}%`, borderRadius: 6, background: colorFor(i, s._other ? null : s.label), display: "flex", alignItems: "center", paddingLeft: 8, fontSize: 11, fontWeight: 700, color: C.ink }}>{s.count}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p style={{ fontSize: 11, color: C.dim, marginTop: 18 }}>📊 Charts build from the result rows — pick any column above to group by. Rendered locally, no external calls.</p>
+    </div>
+  );
+}
+
 function toCSV(rows) {
   const flat = rows.map((r) => flattenRow(r));
   const cols = [];
@@ -3679,6 +3804,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             onChange={setResTab}
             tabs={[
               { id: "preview", label: "Preview" },
+              ...(rows.length ? [{ id: "charts", label: "📊 Charts" }] : []),
               { id: "headers", label: "Headers", badge: respHeaders ? Object.keys(respHeaders).length : null },
               { id: "snippets", label: "Code & snippets" },
             ]}
@@ -3763,6 +3889,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 <div style={{ fontSize: 32, opacity: 0.4 }}>⬡</div>
                 <p className="text-sm mt-2">Build a query above, then <b>Run</b> — results land here.</p>
               </div>
+            )
+          )}
+
+          {resTab === "charts" && (
+            result && rows.length ? (
+              <ChartsView rows={rows} C={C} />
+            ) : (
+              <p className="text-xs py-6 text-center" style={{ color: C.dim }}>Run a query that returns rows to see charts.</p>
             )
           )}
 
