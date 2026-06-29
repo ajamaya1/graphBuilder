@@ -1002,6 +1002,15 @@ function getPathIndex(version) {
   return window.__gpParsed[version === "beta" ? "beta" : "v1"];
 }
 
+// when graph-paths.js was last rebuilt from Microsoft's OpenAPI specs (stamped by the generator)
+function graphIndexDate() {
+  const raw = typeof window !== "undefined" && window.GRAPH_PATHS && window.GRAPH_PATHS.generated;
+  if (!raw) return null;
+  const d = new Date(raw + "T00:00:00Z");
+  if (isNaN(d)) return raw;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 // ── read-only delegated scope bundle (sign-in mode is read-only by design) ──
 const READ_SCOPES = [
   "User.Read", "Mail.Read", "Calendars.Read", "Files.Read", "Contacts.Read", "Tasks.Read",
@@ -1647,7 +1656,7 @@ const FAQ = [
   },
   {
     q: "Can I find an endpoint that isn’t in the dropdown?",
-    a: "Yes — pick “Search every Graph path” in the resource dropdown. It searches all 27,000+ official Graph endpoints. Type words to narrow (e.g. “autopilot”), and tap a result to use it. Property pickers fill in automatically after you run it once.",
+    a: "Yes — pick “Search every Graph path” in the resource dropdown. It searches all 27,000+ official Graph endpoints (≈10,300 v1.0 + ≈17,400 beta). Type words to narrow (e.g. “autopilot”), and tap a result to use it. Property pickers fill in automatically after you run it once. The index is rebuilt every Monday from Microsoft's official OpenAPI specs (github.com/microsoftgraph/msgraph-metadata), and the “index updated …” badge in the path browser shows how fresh it is.",
   },
   {
     q: "How do I keep or re-run a query?",
@@ -2754,7 +2763,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         return Object.keys(seen).sort().map((g) => [g, seen[g]]);
       })() : null;
       return (
-        <Section title={idx ? `Browse all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={close}>
+        <Section title={idx ? `Browse all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={idx && graphIndexDate() ? <div className="flex items-center gap-2"><span title="When this index was last rebuilt from Microsoft's official OpenAPI specs (auto-refreshes weekly)" style={{ fontSize: 10, color: C.dim, fontFamily: MONO, padding: "2px 8px", borderRadius: 999, border: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>● index updated {graphIndexDate()}</span>{close}</div> : close}>
           <input
             value={customPath}
             onChange={(e) => setCustomPath(e.target.value)}
@@ -2803,7 +2812,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   </div>
                 </>
               )}
-              {learn && <Tip>This is the complete Microsoft Graph surface, extracted from Microsoft's official OpenAPI specs. Switch the version block to browse beta vs v1.0.</Tip>}
+              {learn && <Tip>This is the complete Microsoft Graph surface, extracted from Microsoft's official OpenAPI specs{graphIndexDate() ? <> · auto-refreshed weekly, last updated <b>{graphIndexDate()}</b></> : ""}. Switch the version block to browse beta vs v1.0.</Tip>}
             </>
           ) : (
             <>

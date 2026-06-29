@@ -16,13 +16,14 @@ paths:
     ...
 
 Output format (must match what index.html expects):
-window.GRAPH_PATHS={v1:"/path~GO\n/path2~GAD...",beta:"..."}
+window.GRAPH_PATHS={v1:"/path~GO\n/path2~GAD...",beta:"...",generated:"YYYY-MM-DD"}
 Method letters: G=GET, O=POST, A=PATCH, U=PUT, D=DELETE
 """
 import json
 import re
 import sys
 import urllib.request
+from datetime import datetime, timezone
 
 SPECS = {
     "v1": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
@@ -94,10 +95,14 @@ def main() -> int:
         out[key] = encode(paths)
         print(f"  {len(paths)} paths", flush=True)
 
-    js = "window.GRAPH_PATHS={v1:" + json.dumps(out["v1"]) + ",beta:" + json.dumps(out["beta"]) + "}"
+    # stamp the build date (UTC) so the app can show how fresh the index is
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    js = ("window.GRAPH_PATHS={v1:" + json.dumps(out["v1"])
+          + ",beta:" + json.dumps(out["beta"])
+          + ",generated:" + json.dumps(generated) + "}")
     with open("graph-paths.js", "w", encoding="utf-8") as f:
         f.write(js)
-    print(f"wrote graph-paths.js ({len(js)/1e6:.2f} MB)")
+    print(f"wrote graph-paths.js ({len(js)/1e6:.2f} MB, generated {generated})")
     return 0
 
 
