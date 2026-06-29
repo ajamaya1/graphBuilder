@@ -864,33 +864,82 @@ const DASHBOARDS = {
   exec: {
     title: "Executive Dashboard",
     icon: "📈",
-    blurb: "Tenant-level KPIs for leadership & recertification — identity footprint, security posture and license spend.",
+    blurb: "Tenant-level KPIs for leadership & recertification — identity footprint, security posture, app landscape and license spend.",
     tiles: [
-      { key: "users", icon: "👥", label: "Total users", scope: "User.Read.All", version: "v1.0", path: "users?$count=true&$top=1", read: readCount, accent: "resource", open: "Full User Directory Export" },
-      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Leaver Report — Offboarding Evidence" },
-      { key: "guests", icon: "🌐", label: "Guest accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Guest Access Recertification Report" },
-      { key: "groups", icon: "🗂", label: "Groups", scope: "Group.Read.All", version: "v1.0", path: "groups?$count=true&$top=1", read: readCount, accent: "param", open: "Group Master Inventory" },
-      { key: "devices", icon: "🖥", label: "Registered devices", scope: "Device.Read.All", version: "v1.0", path: "devices?$count=true&$top=1", read: readCount, accent: "param", open: "Entra Device Registration Report" },
-      { key: "apps", icon: "🏭", label: "Enterprise apps", scope: "Application.Read.All", version: "v1.0", path: "servicePrincipals?$count=true&$top=1", read: readCount, accent: "version", open: "Enterprise App Inventory" },
-      { key: "secure", icon: "🛡", label: "Secure Score", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/secureScores?$top=1", read: (d) => { const s = d && d.value && d.value[0]; return s ? `${Math.round(s.currentScore)} / ${Math.round(s.maxScore)}` : "—"; }, accent: "ok", open: "Secure Score Posture & Trend" },
-      { key: "lic", icon: "🪪", label: "License seats used", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: (d) => { const v = (d && d.value) || []; let c = 0, t = 0; v.forEach((s) => { c += s.consumedUnits || 0; t += (s.prepaidUnits && s.prepaidUnits.enabled) || 0; }); return `${c} / ${t}`; }, accent: "method", open: "License Inventory & Availability" },
-      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report" },
+      // ── Identity Footprint ──
+      { key: "users", icon: "👥", label: "Total users", scope: "User.Read.All", version: "v1.0", path: "users?$count=true&$top=1", read: readCount, accent: "resource", open: "Full User Directory Export", section: "Identity Footprint" },
+      { key: "members", icon: "👤", label: "Members", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Member'&$count=true&$top=1", read: readCount, accent: "resource", section: "Identity Footprint" },
+      { key: "guests", icon: "🌐", label: "Guests", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Guest Access Recertification Report", section: "Identity Footprint" },
+      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Leaver Report — Offboarding Evidence", section: "Identity Footprint" },
+      { key: "groups", icon: "🗂", label: "Groups", scope: "Group.Read.All", version: "v1.0", path: "groups?$count=true&$top=1", read: readCount, accent: "param", open: "Group Master Inventory", section: "Identity Footprint" },
+      { key: "devices", icon: "🖥", label: "Registered devices", scope: "Device.Read.All", version: "v1.0", path: "devices?$count=true&$top=1", read: readCount, accent: "param", open: "Entra Device Registration Report", section: "Identity Footprint" },
+      // ── Security Posture ──
+      { key: "secure", icon: "🛡", label: "Secure Score", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/secureScores?$top=1", read: (d) => { const s = d && d.value && d.value[0]; return s ? `${Math.round(s.currentScore)} / ${Math.round(s.maxScore)}` : "—"; }, accent: "ok", open: "Secure Score Posture & Trend", section: "Security Posture" },
+      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report", section: "Security Posture" },
+      { key: "alerts", icon: "🔔", label: "Open alerts", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/alerts_v2?$filter=status eq 'new' or status eq 'inProgress'&$top=999", read: readLen, accent: "danger", open: "Open Security Alert Report", section: "Security Posture" },
+      { key: "incidents", icon: "🚨", label: "Active incidents", scope: "SecurityIncident.Read.All", version: "v1.0", path: "security/incidents?$filter=status eq 'active'&$top=999", read: readLen, accent: "danger", open: "Active Security Incident Report", section: "Security Posture" },
+      { key: "ca", icon: "🔒", label: "CA policies", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies", read: readLen, accent: "param", open: "Conditional Access Coverage Report", section: "Security Posture" },
+      // ── App Landscape ──
+      { key: "appregs", icon: "📝", label: "App registrations", scope: "Application.Read.All", version: "v1.0", path: "applications?$count=true&$top=1", read: readCount, accent: "version", open: "App Secret & Certificate Expiry Audit", section: "App Landscape" },
+      { key: "apps", icon: "🏭", label: "Enterprise apps", scope: "Application.Read.All", version: "v1.0", path: "servicePrincipals?$count=true&$top=1", read: readCount, accent: "version", open: "Enterprise App Inventory", section: "App Landscape" },
+      { key: "consents", icon: "🤝", label: "Tenant-wide consents", scope: "Directory.Read.All", version: "v1.0", path: "oauth2PermissionGrants?$filter=consentType eq 'AllPrincipals'&$top=999", read: readLen, accent: "method", open: "Tenant-Wide Consent Risk Report", section: "App Landscape" },
+      // ── Licensing & Adoption ──
+      { key: "lic", icon: "🪪", label: "License seats used", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: (d) => { const v = (d && d.value) || []; let c = 0, t = 0; v.forEach((s) => { c += s.consumedUnits || 0; t += (s.prepaidUnits && s.prepaidUnits.enabled) || 0; }); return `${c} / ${t}`; }, accent: "method", open: "License Inventory & Availability", section: "Licensing & Adoption" },
+      { key: "skus", icon: "📦", label: "SKU count", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: readLen, accent: "method", section: "Licensing & Adoption" },
     ],
   },
   sysadmin: {
     title: "SysAdmin Dashboard",
     icon: "📊",
-    blurb: "Operational health for daily admin work — device compliance, account hygiene and privileged/security posture.",
+    blurb: "Operational health for daily admin work — device fleet, account hygiene, security posture and compliance configuration.",
     tiles: [
-      { key: "enrolled", icon: "📱", label: "Enrolled devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/managedDeviceOverview", read: (d) => (d && d.enrolledDeviceCount != null ? d.enrolledDeviceCount : "—"), accent: "resource", open: "Intune Device Master Inventory" },
-      { key: "compliant", icon: "✅", label: "Compliant devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.compliantDeviceCount != null ? d.compliantDeviceCount : "—"), accent: "ok" },
-      { key: "noncompliant", icon: "⚠", label: "Non-compliant", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.nonCompliantDeviceCount != null ? d.nonCompliantDeviceCount : "—"), accent: "danger", open: "Non-Compliant Device Remediation Report" },
-      { key: "errordev", icon: "❔", label: "Error / unknown devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d ? (d.errorDeviceCount || 0) + (d.unknownDeviceCount || 0) + (d.conflictDeviceCount || 0) : "—"), accent: "method", open: "Unknown-Compliance Investigation Report" },
-      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Disabled-but-Licensed Reclaim Report" },
-      { key: "guests", icon: "🌐", label: "Guest accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Oldest-Guest Cleanup Report" },
-      { key: "roles", icon: "👑", label: "Activated admin roles", scope: "Directory.Read.All", version: "v1.0", path: "directoryRoles", read: readLen, accent: "header", open: "Privileged Role Membership Report" },
-      { key: "ca", icon: "🔒", label: "CA policies", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies", read: readLen, accent: "param", open: "Conditional Access Coverage Report" },
-      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report" },
+      // ── Device Fleet ──
+      { key: "enrolled", icon: "📱", label: "Enrolled devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/managedDeviceOverview", read: (d) => (d && d.enrolledDeviceCount != null ? d.enrolledDeviceCount : "—"), accent: "resource", open: "Intune Device Master Inventory", section: "Device Fleet" },
+      { key: "compliant", icon: "✅", label: "Compliant devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.compliantDeviceCount != null ? d.compliantDeviceCount : "—"), accent: "ok", open: "Compliance State Summary Dashboard", section: "Device Fleet" },
+      { key: "noncompliant", icon: "⚠", label: "Non-compliant", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.nonCompliantDeviceCount != null ? d.nonCompliantDeviceCount : "—"), accent: "danger", open: "Non-Compliant Device Remediation Report", section: "Device Fleet" },
+      { key: "errordev", icon: "❔", label: "Error / unknown", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d ? (d.errorDeviceCount || 0) + (d.unknownDeviceCount || 0) + (d.conflictDeviceCount || 0) : "—"), accent: "method", open: "Unknown-Compliance Investigation Report", section: "Device Fleet" },
+      { key: "cloudpcs", icon: "☁", label: "Cloud PCs", scope: "CloudPC.Read.All", version: "v1.0", path: "deviceManagement/virtualEndpoint/cloudPCs?$top=999", read: readLen, accent: "version", open: "Cloud PC Provisioning Failure Report", section: "Device Fleet" },
+      { key: "autopilot", icon: "✈", label: "Autopilot devices", scope: "DeviceManagementServiceConfig.Read.All", version: "v1.0", path: "deviceManagement/windowsAutopilotDeviceIdentities?$top=999", read: readLen, accent: "version", open: "Autopilot Registration Report", section: "Device Fleet" },
+      // ── Identity Hygiene ──
+      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", open: "Account Status Summary", section: "Identity Hygiene" },
+      { key: "guests", icon: "🌐", label: "Guest accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=userType eq 'Guest'&$count=true&$top=1", read: readCount, accent: "method", open: "Oldest-Guest Cleanup Report", section: "Identity Hygiene" },
+      { key: "roles", icon: "👑", label: "Activated admin roles", scope: "Directory.Read.All", version: "v1.0", path: "directoryRoles", read: readLen, accent: "header", open: "Privileged Role Membership Report", section: "Identity Hygiene" },
+      { key: "pending", icon: "✉", label: "Pending invitations", scope: "User.Read.All", version: "v1.0", path: "users?$filter=externalUserState eq 'PendingAcceptance'&$count=true&$top=1", read: readCount, accent: "method", section: "Identity Hygiene" },
+      // ── Security & Access ──
+      { key: "ca", icon: "🔒", label: "CA policies", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies", read: readLen, accent: "param", open: "Conditional Access Coverage Report", section: "Security & Access" },
+      { key: "risky", icon: "⚡", label: "Risky users", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report", section: "Security & Access" },
+      { key: "alerts", icon: "🔔", label: "Open alerts", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/alerts_v2?$filter=status eq 'new' or status eq 'inProgress'&$top=999", read: readLen, accent: "danger", open: "Open Security Alert Report", section: "Security & Access" },
+      { key: "incidents", icon: "🚨", label: "Active incidents", scope: "SecurityIncident.Read.All", version: "v1.0", path: "security/incidents?$filter=status eq 'active'&$top=999", read: readLen, accent: "danger", open: "Active Security Incident Report", section: "Security & Access" },
+      // ── Config & Compliance ──
+      { key: "compolicies", icon: "📋", label: "Compliance policies", scope: "DeviceManagementConfiguration.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicies", read: readLen, accent: "param", section: "Config & Compliance" },
+      { key: "cfgprofiles", icon: "⚙", label: "Config profiles", scope: "DeviceManagementConfiguration.Read.All", version: "beta", path: "deviceManagement/configurationPolicies", read: readLen, accent: "param", section: "Config & Compliance" },
+      { key: "detapps", icon: "🔍", label: "Detected apps", scope: "DeviceManagementApps.Read.All", version: "v1.0", path: "deviceManagement/detectedApps?$top=999", read: readLen, accent: "version", section: "Config & Compliance" },
+    ],
+  },
+  secops: {
+    title: "Security Operations Dashboard",
+    icon: "🔐",
+    blurb: "SOC-focused view — threat landscape, identity risk signals, access controls and audit trail for investigations.",
+    tiles: [
+      // ── Threat Landscape ──
+      { key: "alerts_all", icon: "🔐", label: "Open alerts", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/alerts_v2?$filter=status eq 'new' or status eq 'inProgress'&$top=999", read: readLen, accent: "danger", open: "Open Security Alert Report", section: "Threat Landscape" },
+      { key: "alerts_high", icon: "🔴", label: "High-severity alerts", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/alerts_v2?$filter=(status eq 'new' or status eq 'inProgress') and severity eq 'high'&$top=999", read: readLen, accent: "danger", section: "Threat Landscape" },
+      { key: "incidents", icon: "🚨", label: "Active incidents", scope: "SecurityIncident.Read.All", version: "v1.0", path: "security/incidents?$filter=status eq 'active'&$top=999", read: readLen, accent: "danger", open: "Active Security Incident Report", section: "Threat Landscape" },
+      { key: "risky", icon: "⚡", label: "Risky users (at risk)", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report", section: "Threat Landscape" },
+      // ── Identity Risk ──
+      { key: "riskdetect", icon: "🔎", label: "Risk detections", scope: "IdentityRiskEvent.Read.All", version: "v1.0", path: "identityProtection/riskDetections?$top=50", read: readLen, accent: "method", open: "Leaked-Credential Detection Report", section: "Identity Risk" },
+      { key: "compromised", icon: "💀", label: "Confirmed compromised", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'confirmedCompromised'&$count=true&$top=1", read: readCount, accent: "danger", section: "Identity Risk" },
+      { key: "secure", icon: "🛡", label: "Secure Score", scope: "SecurityEvents.Read.All", version: "v1.0", path: "security/secureScores?$top=1", read: (d) => { const s = d && d.value && d.value[0]; return s ? `${Math.round(s.currentScore)} / ${Math.round(s.maxScore)}` : "—"; }, accent: "ok", open: "Secure Score Posture & Trend", section: "Identity Risk" },
+      // ── Access Controls ──
+      { key: "ca_total", icon: "🔒", label: "CA policies (total)", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies", read: readLen, accent: "param", open: "Conditional Access Coverage Report", section: "Access Controls" },
+      { key: "ca_enabled", icon: "✅", label: "CA enabled", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/policies?$filter=state eq 'enabled'", read: readLen, accent: "ok", section: "Access Controls" },
+      { key: "namedloc", icon: "📍", label: "Named locations", scope: "Policy.Read.All", version: "v1.0", path: "identity/conditionalAccess/namedLocations", read: readLen, accent: "param", open: "Named Location Report", section: "Access Controls" },
+      { key: "authmethods", icon: "🔑", label: "Auth methods policy", scope: "Policy.Read.All", version: "v1.0", path: "policies/authenticationMethodsPolicy", read: (d) => (d && d.id ? "configured" : "—"), accent: "ok", open: "MFA / Passwordless Readiness Report", section: "Access Controls" },
+      // ── Audit & Investigation ──
+      { key: "diraudits", icon: "📜", label: "Audit log access", scope: "AuditLog.Read.All", version: "v1.0", path: "auditLogs/directoryAudits?$top=1", read: (d) => (d && Array.isArray(d.value) && d.value.length > 0 ? "active" : "—"), accent: "ok", open: "Directory Change Audit (latest)", section: "Audit & Investigation" },
+      { key: "failedops", icon: "❌", label: "Failed operations", scope: "AuditLog.Read.All", version: "v1.0", path: "auditLogs/directoryAudits?$filter=result eq 'failure'&$top=50", read: readLen, accent: "danger", open: "Failed Operation Audit", section: "Audit & Investigation" },
+      { key: "rolechanges", icon: "👑", label: "Role changes", scope: "AuditLog.Read.All", version: "v1.0", path: "auditLogs/directoryAudits?$filter=category eq 'RoleManagement'&$top=50", read: readLen, accent: "header", open: "Privileged Role Change Audit", section: "Audit & Investigation" },
+      { key: "consentaudits", icon: "🤝", label: "Consent grants", scope: "AuditLog.Read.All", version: "v1.0", path: "auditLogs/directoryAudits?$filter=category eq 'ApplicationManagement' and activityDisplayName eq 'Consent to application'&$top=50", read: readLen, accent: "method", open: "App Consent Audit Report", section: "Audit & Investigation" },
     ],
   },
 };
@@ -1804,7 +1853,7 @@ function GraphBlocks() {
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
   const [loadedTemplate, setLoadedTemplate] = useState(null); // template currently loaded (for inverse/undo offer)
-  const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec"
+  const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops"
   const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
   const [dashLoading, setDashLoading] = useState(false);
 
@@ -3156,6 +3205,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             >
               📈 Executive
             </button>
+            <button
+              onClick={() => openDashboard("secops")}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "secops" ? hexA(C.danger, 0.14) : "transparent", color: dashOpen === "secops" ? C.danger : C.dim, border: `1px solid ${dashOpen === "secops" ? hexA(C.danger, 0.4) : C.line}`, cursor: "pointer" }}
+              title="Security operations dashboard"
+            >
+              🔐 SecOps
+            </button>
             {/* divider */}
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
             {account ? (
@@ -3200,28 +3257,40 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 {!account ? (
                   <p className="text-sm px-1 py-6 text-center" style={{ color: C.dim }}>Sign in (top right) to load live tenant metrics.</p>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
-                    {cfg.tiles.map((t) => {
-                      const st = dashData[t.key] || { status: "loading" };
-                      const ac = C[t.accent] || C.resource;
-                      return (
-                        <div key={t.key} style={{ padding: "13px 14px", borderRadius: 12, background: C.panel, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
-                          <div className="flex items-center gap-2">
-                            <span style={{ fontSize: 16 }}>{t.icon}</span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: C.dim, letterSpacing: "0.03em", textTransform: "uppercase" }}>{t.label}</span>
+                  <div>
+                    {(() => {
+                      const sections = [];
+                      const seen = {};
+                      cfg.tiles.forEach((t) => { const s = t.section || ""; if (!seen[s]) { seen[s] = []; sections.push(s); } seen[s].push(t); });
+                      return sections.map((sec) => (
+                        <div key={sec} style={{ marginBottom: 18 }}>
+                          {sec && <div style={{ fontSize: 10, fontWeight: 800, color: C.dim, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8, paddingLeft: 2 }}>{sec}</div>}
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+                            {seen[sec].map((t) => {
+                              const st = dashData[t.key] || { status: "loading" };
+                              const ac = C[t.accent] || C.resource;
+                              return (
+                                <div key={t.key} style={{ padding: "13px 14px", borderRadius: 12, background: C.panel, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
+                                  <div className="flex items-center gap-2">
+                                    <span style={{ fontSize: 16 }}>{t.icon}</span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: C.dim, letterSpacing: "0.03em", textTransform: "uppercase" }}>{t.label}</span>
+                                  </div>
+                                  <div style={{ fontSize: 26, fontWeight: 800, fontFamily: MONO, color: ac, lineHeight: 1.1, minHeight: 30 }}>
+                                    {st.status === "loading" ? <span style={{ fontSize: 13, color: C.dim, fontWeight: 600 }}>loading…</span>
+                                      : st.status === "err" ? <span style={{ fontSize: 12, color: C.danger, fontWeight: 600 }} title={st.err}>⚠ error</span>
+                                      : (typeof st.value === "number" ? st.value.toLocaleString() : String(st.value))}
+                                  </div>
+                                  {st.status === "err" && <span style={{ fontSize: 10, color: C.dim, lineHeight: 1.3 }}>{String(st.err).slice(0, 80)}</span>}
+                                  {t.open && (
+                                    <button onClick={() => loadTemplateByName(t.open)} style={{ ...ghostBtn(ac), padding: "3px 9px", fontSize: 11, alignSelf: "flex-start", marginTop: 2 }} title={`Open report: ${t.open}`}>Open report →</button>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: MONO, color: ac, lineHeight: 1.1, minHeight: 30 }}>
-                            {st.status === "loading" ? <span style={{ fontSize: 13, color: C.dim, fontWeight: 600 }}>loading…</span>
-                              : st.status === "err" ? <span style={{ fontSize: 12, color: C.danger, fontWeight: 600 }} title={st.err}>⚠ error</span>
-                              : (typeof st.value === "number" ? st.value.toLocaleString() : String(st.value))}
-                          </div>
-                          {st.status === "err" && <span style={{ fontSize: 10, color: C.dim, lineHeight: 1.3 }}>{String(st.err).slice(0, 80)}</span>}
-                          {t.open && (
-                            <button onClick={() => loadTemplateByName(t.open)} style={{ ...ghostBtn(ac), padding: "3px 9px", fontSize: 11, alignSelf: "flex-start", marginTop: 2 }} title={`Open report: ${t.open}`}>Open report →</button>
-                          )}
                         </div>
-                      );
-                    })}
+                      ));
+                    })()}
                   </div>
                 )}
                 <p className="text-xs mt-3" style={{ color: C.dim }}>Metrics are live Graph reads. <b>Open report →</b> loads the full underlying report into the builder, where you can drill into rows and run reversible actions. Tiles showing <span style={{ color: C.danger }}>⚠ error</span> usually need an extra consent or admin scope — hover for the message.</p>
