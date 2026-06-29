@@ -942,6 +942,31 @@ const DASHBOARDS = {
       { key: "consentaudits", icon: "🤝", label: "Consent grants", scope: "AuditLog.Read.All", version: "v1.0", path: "auditLogs/directoryAudits?$filter=category eq 'ApplicationManagement' and activityDisplayName eq 'Consent to application'&$top=50", read: readLen, accent: "method", open: "App Consent Audit Report", section: "Audit & Investigation" },
     ],
   },
+  health: {
+    title: "Tenant Health Pulse",
+    icon: "💓",
+    blurb: "Morning-briefing view — service health, expiring secrets, stale accounts, license headroom and compliance drift.",
+    tiles: [
+      // ── Service Health ──
+      { key: "svchealth", icon: "🟢", label: "Service issues", scope: "ServiceHealth.Read.All", version: "v1.0", path: "admin/serviceAnnouncement/issues?$filter=isResolved eq false&$top=999", read: readLen, accent: "danger", section: "Service Health" },
+      { key: "advisories", icon: "📢", label: "Active advisories", scope: "ServiceHealth.Read.All", version: "v1.0", path: "admin/serviceAnnouncement/messages?$filter=messageType eq 'serviceIssue'&$top=50", read: readLen, accent: "method", section: "Service Health" },
+      { key: "planned", icon: "🗓", label: "Planned maintenance", scope: "ServiceHealth.Read.All", version: "v1.0", path: "admin/serviceAnnouncement/messages?$filter=messageType eq 'plannedMaintenance'&$top=50", read: readLen, accent: "version", section: "Service Health" },
+      // ── Expiring Secrets ──
+      { key: "apps_exp30", icon: "🔑", label: "Apps — secrets <30d", scope: "Application.Read.All", version: "v1.0", path: "applications?$select=displayName,appId,passwordCredentials,keyCredentials&$top=999", read: (d) => { if (!d || !d.value) return "—"; const cut = Date.now() + 30*86400000; return d.value.filter((a) => [...(a.passwordCredentials||[]),...(a.keyCredentials||[])].some((c) => c.endDateTime && new Date(c.endDateTime).getTime() < cut)).length; }, accent: "danger", open: "App Secret & Certificate Expiry Audit", section: "Expiring Secrets" },
+      { key: "apps_exp90", icon: "⏳", label: "Apps — secrets <90d", scope: "Application.Read.All", version: "v1.0", path: "applications?$select=displayName,appId,passwordCredentials,keyCredentials&$top=999", read: (d) => { if (!d || !d.value) return "—"; const cut = Date.now() + 90*86400000; return d.value.filter((a) => [...(a.passwordCredentials||[]),...(a.keyCredentials||[])].some((c) => c.endDateTime && new Date(c.endDateTime).getTime() < cut)).length; }, accent: "method", open: "App Secret & Certificate Expiry Audit", section: "Expiring Secrets" },
+      // ── Account Staleness ──
+      { key: "stale90", icon: "💤", label: "Users inactive 90d+", scope: "AuditLog.Read.All", version: "v1.0", path: "users?$filter=signInActivity/lastSignInDateTime le " + new Date(Date.now()-90*86400000).toISOString().slice(0,10) + "T00:00:00Z&$count=true&$top=1", read: readCount, accent: "method", section: "Account Staleness" },
+      { key: "neverlogin", icon: "👻", label: "Never signed in", scope: "AuditLog.Read.All", version: "v1.0", path: "users?$filter=signInActivity/lastSignInDateTime eq null and userType eq 'Member'&$count=true&$top=1", read: readCount, accent: "danger", section: "Account Staleness" },
+      { key: "disabled", icon: "🚫", label: "Disabled accounts", scope: "User.Read.All", version: "v1.0", path: "users?$filter=accountEnabled eq false&$count=true&$top=1", read: readCount, accent: "danger", section: "Account Staleness" },
+      // ── License Headroom ──
+      { key: "lic_used", icon: "🪪", label: "License seats used", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: (d) => { const v = (d && d.value) || []; let c = 0, t = 0; v.forEach((s) => { c += s.consumedUnits || 0; t += (s.prepaidUnits && s.prepaidUnits.enabled) || 0; }); return `${c} / ${t}`; }, accent: "method", section: "License Headroom" },
+      { key: "lic_util", icon: "📊", label: "Utilization %", scope: "Organization.Read.All", version: "v1.0", path: "subscribedSkus", read: (d) => { const v = (d && d.value) || []; let c = 0, t = 0; v.forEach((s) => { c += s.consumedUnits || 0; t += (s.prepaidUnits && s.prepaidUnits.enabled) || 0; }); return t ? Math.round(c/t*100) + "%" : "—"; }, accent: "ok", open: "License Inventory & Availability", section: "License Headroom" },
+      // ── Compliance Drift ──
+      { key: "noncompliant_d", icon: "⚠", label: "Non-compliant devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d && d.nonCompliantDeviceCount != null ? d.nonCompliantDeviceCount : "—"), accent: "danger", open: "Non-Compliant Device Remediation Report", section: "Compliance Drift" },
+      { key: "error_d", icon: "❔", label: "Error/unknown devices", scope: "DeviceManagementManagedDevices.Read.All", version: "v1.0", path: "deviceManagement/deviceCompliancePolicyDeviceStateSummary", read: (d) => (d ? (d.errorDeviceCount || 0) + (d.unknownDeviceCount || 0) : "—"), accent: "method", section: "Compliance Drift" },
+      { key: "risky_pulse", icon: "⚡", label: "Risky users (active)", scope: "IdentityRiskyUser.Read.All", version: "v1.0", path: "identityProtection/riskyUsers?$filter=riskState eq 'atRisk'&$count=true&$top=1", read: readCount, accent: "danger", open: "Risky User Remediation Report", section: "Compliance Drift" },
+    ],
+  },
 };
 
 const OPS = [
@@ -1666,6 +1691,54 @@ function downloadPS1(text, name, title) {
   URL.revokeObjectURL(url);
 }
 
+// ── Diff Snapshots: compare two query runs side-by-side ──
+function DiffView({ baseSnap, currentRows, C }) {
+  const baseById = {};
+  (baseSnap.rows || []).forEach((r) => { if (r.id) baseById[r.id] = r; });
+  const currById = {};
+  currentRows.forEach((r) => { if (r.id) currById[r.id] = r; });
+  const allIds = [...new Set([...Object.keys(baseById), ...Object.keys(currById)])];
+  const added = [], removed = [], changed = [], unchanged = [];
+  allIds.forEach((id) => {
+    const b = baseById[id], c = currById[id];
+    if (!b && c) added.push(c);
+    else if (b && !c) removed.push(b);
+    else if (b && c) {
+      const bj = JSON.stringify(flattenRow(b)), cj = JSON.stringify(flattenRow(c));
+      (bj !== cj ? changed : unchanged).push({ before: b, after: c });
+    }
+  });
+  const noId = !currentRows.some((r) => r.id) && !(baseSnap.rows || []).some((r) => r.id);
+  if (noId) return <p style={{ fontSize: 12, color: C.dim, padding: 8 }}>Rows don't have an <b>id</b> field — diff requires a unique key to match rows across snapshots.</p>;
+  const allCols = [...new Set([...(baseSnap.cols || []), ...Object.keys(currentRows[0] || {}).filter((k) => !k.startsWith("@") && typeof (currentRows[0] || {})[k] !== "object")])].slice(0, 8);
+  const cell = (v) => v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return (
+    <div style={{ fontSize: 12 }}>
+      <div className="flex gap-3 mb-3 flex-wrap" style={{ fontSize: 12 }}>
+        <span style={{ color: C.ok, fontWeight: 700 }}>+{added.length} added</span>
+        <span style={{ color: C.danger, fontWeight: 700 }}>-{removed.length} removed</span>
+        <span style={{ color: C.method, fontWeight: 700 }}>~{changed.length} changed</span>
+        <span style={{ color: C.dim }}>{unchanged.length} unchanged</span>
+        <span style={{ color: C.dim, marginLeft: "auto", fontSize: 11 }}>base: {baseSnap.label} · {baseSnap.ts}</span>
+      </div>
+      {(added.length + removed.length + changed.length) === 0 ? (
+        <p style={{ color: C.dim, textAlign: "center", padding: 24 }}>No changes detected — results are identical.</p>
+      ) : (
+        <div style={{ overflowX: "auto", maxHeight: 400, overflowY: "auto" }}>
+          <table className="w-full text-xs" style={{ fontFamily: MONO }}>
+            <thead><tr>{["", ...allCols].map((c, i) => <th key={i} className="px-2 py-1.5 text-left whitespace-nowrap" style={{ color: C.dim, borderBottom: `1px solid ${C.line}`, fontWeight: 700 }}>{c}</th>)}</tr></thead>
+            <tbody>
+              {added.map((r, i) => <tr key={`a${i}`} style={{ background: hexA(C.ok, 0.08) }}><td className="px-2 py-1" style={{ color: C.ok, fontWeight: 800 }}>+</td>{allCols.map((c, j) => <td key={j} className="px-2 py-1" style={{ color: C.ok }}>{cell(r[c])}</td>)}</tr>)}
+              {removed.map((r, i) => <tr key={`r${i}`} style={{ background: hexA(C.danger, 0.08) }}><td className="px-2 py-1" style={{ color: C.danger, fontWeight: 800 }}>-</td>{allCols.map((c, j) => <td key={j} className="px-2 py-1" style={{ color: C.danger, textDecoration: "line-through" }}>{cell(r[c])}</td>)}</tr>)}
+              {changed.map((ch, i) => <tr key={`c${i}`} style={{ background: hexA(C.method, 0.06) }}><td className="px-2 py-1" style={{ color: C.method, fontWeight: 800 }}>~</td>{allCols.map((c, j) => { const bv = cell(ch.before[c]), av = cell(ch.after[c]); return <td key={j} className="px-2 py-1" style={{ color: bv !== av ? C.method : C.text }}>{bv !== av ? <>{av} <span style={{ color: C.dim, fontSize: 10 }}>was {bv}</span></> : av}</td>; })}</tr>)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Ps1Btn({ text, name, title }) {
   return (
     <button onClick={() => downloadPS1(text, name, title)} style={ghostBtn()} title="Download as a .ps1 script">
@@ -1853,9 +1926,27 @@ function GraphBlocks() {
   const [templSearch, setTemplSearch] = useState("");
   const [templCat, setTemplCat] = useState("all");
   const [loadedTemplate, setLoadedTemplate] = useState(null); // template currently loaded (for inverse/undo offer)
-  const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops"
+  const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops" | "health"
   const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
   const [dashLoading, setDashLoading] = useState(false);
+  // ── Diff Snapshots ──
+  const [snapshots, setSnapshots] = useState([]);
+  const [diffBase, setDiffBase] = useState(null);
+  // ── Scheduled Query Alerts ──
+  const [watches, setWatches] = useState(() => LS.get("gb_watches", []));
+  const watchTimers = useRef({});
+  const [watchResults, setWatchResults] = useState({});
+  const [watchesOpen, setWatchesOpen] = useState(false);
+  // ── Bulk Operations Pipeline ──
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, results: [] });
+  const [bulkOpen, setBulkOpen] = useState(false);
+  // ── Relationship Graph ──
+  const [graphNodes, setGraphNodes] = useState([]);
+  const [graphEdges, setGraphEdges] = useState([]);
+  const [graphLoading, setGraphLoading] = useState(false);
 
   // relationship navigation: jump to {resource}/{id}/{relationship} as a fresh query
   const navigateRelationship = (rel) => {
@@ -2545,6 +2636,168 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
     loadDashboard(which);
   }
 
+  // ── Diff Snapshots ──
+  function saveSnapshot() {
+    if (!rows.length) return;
+    const snap = { id: Date.now(), ts: new Date().toLocaleString(), query: url, rows: rows.slice(), cols: cols.slice(), label: `${method} ${res.label || customPath || res.path}` };
+    setSnapshots((prev) => [snap, ...prev].slice(0, 20));
+    setNotice("Snapshot saved — use Compare to diff against it later.");
+  }
+  const snapsForQuery = snapshots.filter((s) => s.query === url);
+
+  // ── Scheduled Query Alerts: re-run a query on interval, notify on change ──
+  function addWatch() {
+    if (!url) return;
+    const w = { id: Date.now(), query: url, label: `${method} ${res.label || customPath || res.path}`, intervalMin: 5, lastCount: rows.length, version, scope: queryScope, method };
+    const next = [...watches, w];
+    setWatches(next);
+    LS.set("gb_watches", next.map(({ id, query, label, intervalMin, lastCount, version, scope, method }) => ({ id, query, label, intervalMin, lastCount, version, scope, method })));
+    startWatch(w);
+  }
+  function removeWatch(id) {
+    if (watchTimers.current[id]) { clearInterval(watchTimers.current[id]); delete watchTimers.current[id]; }
+    const next = watches.filter((w) => w.id !== id);
+    setWatches(next);
+    LS.set("gb_watches", next.map(({ id, query, label, intervalMin, lastCount, version, scope, method }) => ({ id, query, label, intervalMin, lastCount, version, scope, method })));
+    setWatchResults((prev) => { const n = { ...prev }; delete n[id]; return n; });
+  }
+  async function runWatch(w) {
+    if (!account) return;
+    try {
+      const bearer = await getBearer(w.scope);
+      if (!bearer) return;
+      const headers = { Authorization: `Bearer ${bearer}`, ConsistencyLevel: "eventual" };
+      const r = await fetch(w.query, { headers });
+      if (!r.ok) { setWatchResults((prev) => ({ ...prev, [w.id]: { status: "err", ts: new Date().toLocaleString(), err: `HTTP ${r.status}` } })); return; }
+      const d = await r.json();
+      const count = d["@odata.count"] != null ? d["@odata.count"] : Array.isArray(d.value) ? d.value.length : 1;
+      const changed = w.lastCount != null && count !== w.lastCount;
+      setWatchResults((prev) => ({ ...prev, [w.id]: { status: "ok", ts: new Date().toLocaleString(), count, changed, prevCount: w.lastCount } }));
+      w.lastCount = count;
+      if (changed && "Notification" in window && Notification.permission === "granted") {
+        new Notification("Graph Builder — Watch Alert", { body: `${w.label}: count changed ${w.lastCount} → ${count}`, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='56' font-size='56'>📊</text></svg>" });
+      }
+    } catch (e) { setWatchResults((prev) => ({ ...prev, [w.id]: { status: "err", ts: new Date().toLocaleString(), err: e.message } })); }
+  }
+  function startWatch(w) {
+    if (watchTimers.current[w.id]) return;
+    runWatch(w);
+    watchTimers.current[w.id] = setInterval(() => runWatch(w), (w.intervalMin || 5) * 60000);
+  }
+  useEffect(() => {
+    if (account && watches.length) watches.forEach((w) => startWatch(w));
+    return () => { Object.values(watchTimers.current).forEach(clearInterval); watchTimers.current = {}; };
+  }, [account]);
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  }, []);
+
+  // ── Bulk Operations Pipeline ──
+  function toggleBulkRow(id) { setBulkSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function selectAllBulk() { setBulkSelected(new Set(rows.filter((r) => r.id).map((r) => r.id))); }
+  function clearBulk() { setBulkSelected(new Set()); setBulkAction(null); setBulkProgress({ done: 0, total: 0, results: [] }); }
+  async function runBulkAction() {
+    if (!bulkAction || !bulkSelected.size || !account) return;
+    setBulkRunning(true);
+    const ids = [...bulkSelected];
+    setBulkProgress({ done: 0, total: ids.length, results: [] });
+    const results = [];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const path = bulkAction.path.replace("{id}", id);
+      try {
+        const bearer = await getBearer(queryScope);
+        if (!bearer) { results.push({ id, ok: false, err: "no token" }); continue; }
+        const headers = { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" };
+        const opts = { method: bulkAction.method, headers };
+        if (bulkAction.body && bulkAction.method !== "DELETE") opts.body = bulkAction.body;
+        const ver = bulkAction.version || version;
+        const r = await fetch(`https://graph.microsoft.com/${ver}/${path}`, opts);
+        const ok = r.ok || r.status === 204;
+        results.push({ id, ok, status: r.status, err: ok ? null : await r.text().then((t) => { try { return JSON.parse(t).error?.message || t; } catch { return t; } }) });
+      } catch (e) { results.push({ id, ok: false, err: e.message }); }
+      setBulkProgress({ done: i + 1, total: ids.length, results: [...results] });
+    }
+    setBulkRunning(false);
+  }
+  const rowActs = (resourceId !== "custom") && ROW_ACTIONS[resourceId];
+
+  // ── Relationship Graph ──
+  const GRAPH_RELS = {
+    users: [
+      { label: "manager", path: "users/{id}/manager", type: "user" },
+      { label: "directReports", path: "users/{id}/directReports", type: "user", multi: true },
+      { label: "memberOf", path: "users/{id}/memberOf", type: "group", multi: true },
+      { label: "ownedDevices", path: "users/{id}/ownedDevices", type: "device", multi: true },
+    ],
+    groups: [
+      { label: "members", path: "groups/{id}/members", type: "user", multi: true },
+      { label: "owners", path: "groups/{id}/owners", type: "user", multi: true },
+    ],
+    applications: [
+      { label: "owners", path: "applications/{id}/owners", type: "user", multi: true },
+    ],
+    servicePrincipals: [
+      { label: "owners", path: "servicePrincipals/{id}/owners", type: "user", multi: true },
+    ],
+    devices: [
+      { label: "registeredOwners", path: "devices/{id}/registeredOwners", type: "user", multi: true },
+    ],
+  };
+  const NODE_COLORS = { user: "#3B82F6", group: "#8B5CF6", device: "#10B981", app: "#F59E0B", default: "#6B7280" };
+  function nodeType(item) {
+    const odt = (item["@odata.type"] || "").toLowerCase();
+    if (odt.includes("user")) return "user";
+    if (odt.includes("group")) return "group";
+    if (odt.includes("device")) return "device";
+    if (odt.includes("application") || odt.includes("serviceprincipal")) return "app";
+    return "default";
+  }
+  async function buildGraph() {
+    if (!rows.length || !account) return;
+    setGraphLoading(true);
+    const nodes = [];
+    const edges = [];
+    const seen = new Set();
+    const roots = rows.slice(0, 20);
+    const rels = GRAPH_RELS[resourceId] || [];
+    roots.forEach((r, i) => {
+      if (!r.id) return;
+      const nt = nodeType(r);
+      if (seen.has(r.id)) return;
+      seen.add(r.id);
+      nodes.push({ id: r.id, label: r.displayName || r.userPrincipalName || r.id.slice(0, 8), type: nt, x: 200 + (i % 5) * 140, y: 60 + Math.floor(i / 5) * 100, root: true });
+    });
+    for (const rel of rels.slice(0, 3)) {
+      for (const root of roots.slice(0, 10)) {
+        if (!root.id) continue;
+        try {
+          const bearer = await getBearer(queryScope);
+          if (!bearer) continue;
+          const p = rel.path.replace("{id}", root.id);
+          const r = await fetch(`https://graph.microsoft.com/${version}/${p}?$top=5&$select=id,displayName,userPrincipalName`, { headers: { Authorization: `Bearer ${bearer}`, ConsistencyLevel: "eventual" } });
+          if (!r.ok) continue;
+          const d = await r.json();
+          const items = rel.multi ? (d.value || []) : (d.id ? [d] : []);
+          items.forEach((item) => {
+            if (!item.id || seen.has(item.id)) { if (item.id && seen.has(item.id)) edges.push({ from: root.id, to: item.id, label: rel.label }); return; }
+            seen.add(item.id);
+            const nt = nodeType(item);
+            const angle = Math.random() * Math.PI * 2;
+            const parentNode = nodes.find((n) => n.id === root.id);
+            const px = parentNode ? parentNode.x : 400;
+            const py = parentNode ? parentNode.y : 200;
+            nodes.push({ id: item.id, label: item.displayName || item.userPrincipalName || item.id.slice(0, 8), type: nt, x: px + Math.cos(angle) * (100 + Math.random() * 60), y: py + Math.sin(angle) * (80 + Math.random() * 50) });
+            edges.push({ from: root.id, to: item.id, label: rel.label });
+          });
+        } catch {}
+      }
+    }
+    setGraphNodes(nodes);
+    setGraphEdges(edges);
+    setGraphLoading(false);
+  }
+
   // ── Assistant: execute a Graph query the model asked for. GET runs live (read-only);
   //    writes are never auto-run — they're staged in the builder for the user to review + Run. ──
   async function execGraphQuery(input) {
@@ -3183,6 +3436,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               History{history.length ? ` (${history.length})` : ""}
             </button>
             <button
+              onClick={() => { setWatchesOpen(!watchesOpen); setHistOpen(false); setHelpOpen(false); }}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: watchesOpen ? hexA(C.version, 0.14) : "transparent", color: watchesOpen ? C.version : C.dim, border: `1px solid ${watchesOpen ? hexA(C.version, 0.4) : C.line}`, cursor: "pointer" }}
+              title="View and manage query watches"
+            >
+              👁 Watches{watches.length ? ` (${watches.length})` : ""}
+            </button>
+            <button
               onClick={() => { setHelpOpen(!helpOpen); setHistOpen(false); }}
               className="transition-colors"
               style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
@@ -3212,6 +3473,14 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               title="Security operations dashboard"
             >
               🔐 SecOps
+            </button>
+            <button
+              onClick={() => openDashboard("health")}
+              className="transition-colors"
+              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "health" ? hexA(C.version, 0.14) : "transparent", color: dashOpen === "health" ? C.version : C.dim, border: `1px solid ${dashOpen === "health" ? hexA(C.version, 0.4) : C.line}`, cursor: "pointer" }}
+              title="Morning briefing — service health, expiring secrets, stale accounts"
+            >
+              💓 Health
             </button>
             {/* divider */}
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
@@ -3299,6 +3568,50 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           </div>
           );
         })()}
+
+        {watchesOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 40 }} onClick={() => setWatchesOpen(false)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, margin: "0 auto", marginTop: 60, background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: `${C.glassShadow}, ${C.glassHighlight}`, maxHeight: "70vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div className="flex items-center justify-between px-4 pt-3 pb-2.5" style={{ borderBottom: `1px solid ${C.glassBorder}`, flexShrink: 0 }}>
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: C.text }}>👁 Scheduled Watches{watches.length ? ` (${watches.length})` : ""}</h2>
+                <button onClick={() => setWatchesOpen(false)} style={ghostBtn()}>Close</button>
+              </div>
+              <div className="px-4 py-3" style={{ overflowY: "auto", minHeight: 0 }}>
+                {watches.length === 0 ? (
+                  <p className="text-sm py-6 text-center" style={{ color: C.dim }}>No active watches. Run a query, then click <b>👁 Watch</b> in the response toolbar to monitor it for changes.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {watches.map((w) => {
+                      const wr = watchResults[w.id];
+                      return (
+                        <div key={w.id} style={{ padding: "10px 12px", borderRadius: 10, background: C.panel, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.label || w.query}</div>
+                              <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.method || "GET"} /{w.version || "v1.0"}/{w.query.split("/").slice(4).join("/").split("?")[0]}</div>
+                            </div>
+                            <div className="flex items-center gap-1.5" style={{ flexShrink: 0 }}>
+                              <span style={{ fontSize: 10, color: C.dim }}>every {w.intervalMin || 5}m</span>
+                              <button onClick={() => removeWatch(w.id)} style={{ ...ghostBtn(C.danger), padding: "3px 8px", fontSize: 11 }}>Remove</button>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3" style={{ fontSize: 11 }}>
+                            <span style={{ color: C.dim }}>Last count: <b style={{ color: C.text }}>{w.lastCount != null ? w.lastCount : "—"}</b></span>
+                            {wr && wr.changed && <span style={{ color: C.danger, fontWeight: 700 }}>Changed! {wr.prevCount} → {wr.count}</span>}
+                            {wr && !wr.changed && wr.count != null && <span style={{ color: C.ok }}>Stable ({wr.count})</span>}
+                            {wr && wr.status === "err" && <span style={{ color: C.danger }}>{wr.err}</span>}
+                            <span style={{ color: watchTimers.current[w.id] ? C.ok : C.dim }}>{watchTimers.current[w.id] ? "● running" : "○ stopped"}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs mt-3" style={{ color: C.dim }}>Watches poll your query at the set interval and fire a browser notification when the row count changes. They run as long as this tab is open.</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {histOpen && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }} onClick={() => setHistOpen(false)}>
@@ -3982,6 +4295,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             tabs={[
               { id: "preview", label: "Preview" },
               ...(rows.length ? [{ id: "charts", label: "📊 Charts" }] : []),
+              ...(rows.length && snapsForQuery.length ? [{ id: "diff", label: "⚖ Diff" }] : []),
+              ...(rows.length && GRAPH_RELS[resourceId] ? [{ id: "graph", label: "🔗 Graph" }] : []),
               { id: "headers", label: "Headers", badge: respHeaders ? Object.keys(respHeaders).length : null },
               { id: "snippets", label: "Code & snippets" },
             ]}
@@ -4009,6 +4324,9 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                     </button>
                   ))}
                   <button onClick={() => setShowRaw(!showRaw)} style={ghostBtn()}>{showRaw ? "Table" : "Raw JSON"}</button>
+                  <span style={{ width: 1, height: 16, background: C.line, display: "inline-block" }} />
+                  <button onClick={saveSnapshot} disabled={!rows.length} style={rows.length ? ghostBtn(C.param) : { ...ghostBtn(), opacity: 0.5 }} title="Save a snapshot to compare later">📸 Snapshot</button>
+                  <button onClick={addWatch} disabled={!url} style={url ? ghostBtn(C.version) : { ...ghostBtn(), opacity: 0.5 }} title="Watch this query and get notified when results change">👁 Watch</button>
                 </div>
                 {showRaw || !cols.length ? (
                   <pre className="text-xs overflow-x-auto leading-relaxed m-0" style={{ fontFamily: MONO, color: C.text, maxHeight: 420, overflowY: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
@@ -4024,10 +4342,31 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                         <span style={{ fontSize: 10, color: C.dim }}>loads into the editor to review — fill the id, or use a row's ⚡ menu to auto-fill it.</span>
                       </div>
                     )}
+                    {rowActs && rows.length > 1 && rows.some((r) => r.id) && (
+                      <div className="flex items-center gap-2 mb-2 flex-wrap" style={{ padding: "7px 10px", borderRadius: 8, background: hexA(C.param, 0.06), border: `1px solid ${hexA(C.param, 0.2)}` }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.param }}>Bulk:</span>
+                        <button onClick={selectAllBulk} style={{ ...ghostBtn(C.param), padding: "3px 9px", fontSize: 11 }}>Select all ({rows.filter((r) => r.id).length})</button>
+                        {bulkSelected.size > 0 && <button onClick={clearBulk} style={{ ...ghostBtn(), padding: "3px 9px", fontSize: 11 }}>Clear</button>}
+                        {bulkSelected.size > 0 && (
+                          <>
+                            <select value={bulkAction ? rowActs.indexOf(bulkAction) : ""} onChange={(e) => setBulkAction(e.target.value !== "" ? rowActs[+e.target.value] : null)} style={{ background: C.btnBg, color: C.text, border: `1px solid ${C.line}`, borderRadius: 7, fontSize: 11, padding: "3px 8px", fontFamily: MONO }}>
+                              <option value="">Pick action…</option>
+                              {rowActs.map((a, ai) => <option key={ai} value={ai}>{a.danger ? "⚠ " : ""}{a.label}</option>)}
+                            </select>
+                            <span style={{ fontSize: 11, color: C.text, fontWeight: 700 }}>{bulkSelected.size} selected</span>
+                            {bulkAction && (
+                              <button onClick={() => { if (window.confirm(`Run "${bulkAction.label}" on ${bulkSelected.size} items?\n\nThis will execute ${bulkAction.method} requests against your tenant. Proceed?`)) { setBulkOpen(true); runBulkAction(); } }} disabled={bulkRunning} style={{ ...ghostBtn(bulkAction.danger ? C.danger : C.ok), padding: "4px 12px", fontSize: 11, fontWeight: 700 }}>
+                                {bulkRunning ? `Running… ${bulkProgress.done}/${bulkProgress.total}` : `Run on ${bulkSelected.size} items`}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                     <div className="overflow-x-auto" style={{ maxHeight: 420, overflowY: "auto" }}>
                       <table className="w-full text-xs" style={{ fontFamily: MONO }}>
                         <thead><tr>
-                          <th className="sticky top-0" style={{ background: C.surface, width: 24, borderBottom: `1px solid ${C.line}` }} />
+                          <th className="sticky top-0" style={{ background: C.surface, width: rowActs ? 48 : 24, borderBottom: `1px solid ${C.line}` }}>{rowActs && rows.some((r) => r.id) && <input type="checkbox" checked={bulkSelected.size > 0 && bulkSelected.size >= rows.filter((r) => r.id).length} onChange={(e) => e.target.checked ? selectAllBulk() : clearBulk()} title="Select all for bulk action" style={{ cursor: "pointer", accentColor: C.param }} />}</th>
                           {cols.map((c) => (<th key={c} className="text-left px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.dim, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>{c}</th>))}
                           {rowActs && (<th className="text-right px-2 py-2 whitespace-nowrap sticky top-0" style={{ color: C.method, background: C.surface, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: `1px solid ${C.line}` }}>Action</th>)}
                         </tr></thead>
@@ -4037,7 +4376,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                             const drill = () => { if (!rowId) return; setResourceId(resourceId); setObjectId(String(rowId)); setParams([]); setEditing(null); setLoadedTemplate(null); setTimeout(() => run(), 0); };
                             return (
                               <tr key={i} onClick={drill} style={{ borderTop: `1px solid ${C.line}`, cursor: rowId ? "pointer" : "default" }} title={rowId ? `Load this item (id: ${rowId})` : "No id on this row"} onMouseEnter={(e) => { if (rowId) e.currentTarget.style.background = C.panel; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                                <td className="px-1 text-center" style={{ color: rowId ? C.resource : C.line }}>{rowId ? "›" : ""}</td>
+                                <td className="px-1 text-center" style={{ color: rowId ? C.resource : C.line }} onClick={(e) => e.stopPropagation()}>{rowActs && rowId ? <input type="checkbox" checked={bulkSelected.has(rowId)} onChange={() => toggleBulkRow(rowId)} style={{ cursor: "pointer", accentColor: C.param, marginRight: 4 }} /> : null}{rowId ? "›" : ""}</td>
                                 {cols.map((c) => { const v = c.includes("/") ? c.split("/").reduce((a, k) => a?.[k], r) : r[c]; return (<td key={c} className="px-2 py-1.5 whitespace-nowrap" style={{ color: C.text }}>{v === true ? "true" : v === false ? "false" : v == null ? <span style={{ color: C.dim }}>—</span> : String(v).slice(0, 48)}</td>); })}
                                 {rowActs && (
                                   <td className="px-2 py-1 text-right" onClick={(e) => e.stopPropagation()}>
@@ -4075,6 +4414,59 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             ) : (
               <p className="text-xs py-6 text-center" style={{ color: C.dim }}>Run a query that returns rows to see charts.</p>
             )
+          )}
+
+          {resTab === "diff" && (
+            snapsForQuery.length ? (
+              <div>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span style={{ fontSize: 11, color: C.dim }}>Compare current results against:</span>
+                  {snapsForQuery.map((s) => (
+                    <button key={s.id} onClick={() => setDiffBase(s.id)} style={{ ...ghostBtn(diffBase === s.id ? C.param : undefined), fontSize: 11, padding: "4px 10px", background: diffBase === s.id ? hexA(C.param, 0.12) : undefined }}>{s.ts} ({s.rows.length} rows)</button>
+                  ))}
+                </div>
+                {diffBase && snapsForQuery.find((s) => s.id === diffBase) ? (
+                  <DiffView baseSnap={snapsForQuery.find((s) => s.id === diffBase)} currentRows={rows} C={C} />
+                ) : (
+                  <p style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: 16 }}>Pick a snapshot above to compare against the current results.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs py-6 text-center" style={{ color: C.dim }}>Save a snapshot first (📸 button above), then re-run the query to compare.</p>
+            )
+          )}
+
+          {resTab === "graph" && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <button onClick={buildGraph} disabled={graphLoading || !rows.length} style={{ ...ghostBtn(C.param), padding: "6px 14px", fontSize: 12, fontWeight: 700 }}>{graphLoading ? "Loading relationships…" : graphNodes.length ? "Refresh graph" : "Build relationship graph"}</button>
+                {graphNodes.length > 0 && <span style={{ fontSize: 11, color: C.dim }}>{graphNodes.length} nodes, {graphEdges.length} edges</span>}
+                {Object.entries(NODE_COLORS).filter(([k]) => k !== "default").map(([k, c]) => <span key={k} style={{ fontSize: 10, color: c, fontWeight: 700, textTransform: "uppercase" }}>{k}</span>)}
+              </div>
+              {graphNodes.length > 0 ? (
+                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 420, border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel }}>
+                  <svg width={Math.max(800, ...graphNodes.map((n) => n.x + 100))} height={Math.max(400, ...graphNodes.map((n) => n.y + 60))} style={{ display: "block" }}>
+                    <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d={`M0,0 L8,3 L0,6`} fill={C.dim} /></marker></defs>
+                    {graphEdges.map((e, i) => {
+                      const from = graphNodes.find((n) => n.id === e.from);
+                      const to = graphNodes.find((n) => n.id === e.to);
+                      if (!from || !to) return null;
+                      const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+                      return <g key={i}><line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={C.dim} strokeWidth={1.5} opacity={0.5} markerEnd="url(#arrowhead)" /><text x={mx} y={my - 4} textAnchor="middle" fill={C.dim} fontSize={9} fontFamily={MONO}>{e.label}</text></g>;
+                    })}
+                    {graphNodes.map((n) => (
+                      <g key={n.id}>
+                        <circle cx={n.x} cy={n.y} r={n.root ? 22 : 16} fill={NODE_COLORS[n.type] || NODE_COLORS.default} opacity={0.85} stroke={n.root ? "#fff" : "none"} strokeWidth={n.root ? 2 : 0} />
+                        <text x={n.x} y={n.y + (n.root ? 34 : 28)} textAnchor="middle" fill={C.text} fontSize={10} fontFamily={MONO} fontWeight={n.root ? 700 : 400}>{String(n.label).slice(0, 20)}</text>
+                        <text x={n.x} y={n.y + 4} textAnchor="middle" fill="#fff" fontSize={n.root ? 11 : 9} fontWeight={700}>{n.type === "user" ? "U" : n.type === "group" ? "G" : n.type === "device" ? "D" : n.type === "app" ? "A" : "?"}</text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              ) : (
+                <p className="text-xs py-6 text-center" style={{ color: C.dim }}>{graphLoading ? "Fetching relationships from Graph API…" : "Click \"Build relationship graph\" to visualize entity connections."}</p>
+              )}
+            </div>
           )}
 
           {resTab === "headers" && (
@@ -4128,6 +4520,48 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         </Section>
 
         </div>{/* end body */}
+
+        {bulkOpen && (
+          <div onClick={() => { if (!bulkRunning) setBulkOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: C.glass, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${C.glassBorder}`, borderRadius: 14, maxWidth: 560, width: "100%", overflow: "hidden", boxShadow: `0 20px 60px rgba(0,0,0,0.3)` }}>
+              <div className="flex items-center justify-between px-4 pt-3 pb-2.5" style={{ borderBottom: `1px solid ${C.glassBorder}` }}>
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Bulk Operation{bulkAction ? ` — ${bulkAction.label}` : ""}</h2>
+                {!bulkRunning && <button onClick={() => setBulkOpen(false)} style={ghostBtn()}>Close</button>}
+              </div>
+              <div className="px-4 py-3" style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                {bulkProgress.total > 0 && (
+                  <>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.line, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.round(bulkProgress.done / bulkProgress.total * 100)}%`, height: "100%", background: C.ok, borderRadius: 4, transition: "width 0.3s" }} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>{bulkProgress.done} / {bulkProgress.total}</span>
+                    </div>
+                    {bulkProgress.results.length > 0 && (
+                      <div style={{ fontSize: 11, fontFamily: MONO }}>
+                        {bulkProgress.results.map((r, i) => (
+                          <div key={i} className="flex items-center gap-2 py-1" style={{ borderTop: i > 0 ? `1px solid ${C.line}` : "none" }}>
+                            <span style={{ color: r.ok ? C.ok : C.danger, fontWeight: 700 }}>{r.ok ? "✓" : "✗"}</span>
+                            <span style={{ color: C.dim, minWidth: 60 }}>{String(r.id).slice(0, 12)}…</span>
+                            {r.ok ? <span style={{ color: C.ok }}>{r.status || 204}</span> : <span style={{ color: C.danger }}>{String(r.err).slice(0, 80)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!bulkRunning && (
+                      <div className="mt-3 flex items-center gap-3">
+                        <span style={{ fontSize: 12, fontWeight: 700, color: bulkProgress.results.every((r) => r.ok) ? C.ok : C.method }}>
+                          {bulkProgress.results.filter((r) => r.ok).length} succeeded, {bulkProgress.results.filter((r) => !r.ok).length} failed
+                        </span>
+                        <button onClick={() => { setBulkOpen(false); clearBulk(); }} style={{ ...ghostBtn(C.ok), padding: "5px 12px", fontSize: 11 }}>Done</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {signInModal && (
           <div
