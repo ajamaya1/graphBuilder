@@ -1007,38 +1007,6 @@ const SDK = {
 };
 const VERB = { GET: "Get", POST: "New", PATCH: "Update", DELETE: "Remove" };
 
-const TIPS = {
-  method: "SDK verbs map 1:1 — Get-* sends GET, New-* sends POST, Update-* sends PATCH, Remove-* sends DELETE. Every cmdlet you've ever run is one of these four HTTP calls.",
-  version: "Switching this block is the same as swapping module families: Microsoft.Graph (v1.0) ↔ Microsoft.Graph.Beta — Get-MgUser ↔ Get-MgBetaUser.",
-  select: "$select is the SDK's -Property (alias -Select). Graph returns a default property set otherwise — trimming columns is the easiest performance win there is.",
-  filter: "This string passes straight through the SDK's -Filter, untouched. The SDK never validates it — Graph does, at runtime. That's why a bad filter compiles fine and then 400s.",
-  top: "-Top in the SDK. Without it Graph pages silently (100–1000 items per endpoint) and you only get page one unless you follow @odata.nextLink — which is all the SDK's -All switch does.",
-  orderby: "-Sort in the SDK. Many Intune endpoints reject $orderby on most properties, so a 400 here is the endpoint, not you.",
-  count: "-CountVariable total in the SDK. REST returns it as @odata.count on the response envelope.",
-  expand: "-ExpandProperty in the SDK. For Intune policies and apps, assignments is the big one.",
-  sdk: "The cmdlet noun is just the URL path, PascalCased and de-pluralized: deviceManagement/managedDevices → DeviceManagementManagedDevice. Verbs map to HTTP — Get=GET, New=POST, Update=PATCH, Remove=DELETE — and Mg vs MgBeta is just the version block. Once that clicks, you can decompose any cmdlet into its REST call.",
-  paging: "\u201CLoad next page\u201D follows @odata.nextLink — exactly what the SDK's -All switch automates for you.",
-  auth: "Sign-in requests one fixed bundle of read-only delegated scopes — 'look but don't touch' as a permission model. Org-wide consent is the same admin consent Connect-MgGraph needs for gated scopes, granted once on the enterprise app so nobody else sees a prompt. Everyone still acts under their own identity and their own RBAC.",
-};
-
-const GOTCHAS = {
-  managedDevices: "enrollmentProfileName is always null on list calls — you must GET a single device by ID to see it. And autopilotEnrolled isn't server-side filterable.",
-  autopilot: "Filtering is very limited here — contains(serialNumber,'…') works; most other properties just 400.",
-  configurationPolicies: "Settings Catalog uses name, not displayName. $select=displayName comes back empty and ruins your afternoon.",
-  devices: "deviceId on this resource matches Intune's azureADDeviceId — not the directory object id. Bridging the two takes a filter lookup.",
-  groups: "membershipRule and other non-default properties only return when explicitly listed in $select.",
-  signIns: "Requires Entra ID P1/P2. Filter on createdDateTime to keep responses sane.",
-  cloudPCs: "Lives under /virtualEndpoint. Some properties and remote actions are still beta-only even though v1.0 exists.",
-  me: "/me is a single object, not a collection — $select works, but $filter/$top/$orderby don't apply.",
-  myDriveItems: "This lists the OneDrive root folder only. To go deeper, use a custom path like me/drive/root:/Documents:/children.",
-  plannerTasks: "Planner ignores most query params — no $filter, no $orderby. Pull everything and filter client-side.",
-  directoryRoles: "directoryRoles doesn't support $filter at all, and only shows roles that have been activated.",
-  subscribedSkus: "No $filter or $top here — it's a small list, Graph just returns all of it.",
-  secureScores: "One record per day. $top=1 gets you the latest score.",
-  myMemberOf: "Returns directory objects of mixed types. Filtering needs the ConsistencyLevel header (added automatically here).",
-  custom: "Anything in the Graph docs works here — nested paths, function calls, OData casts. Property dropdowns become free-text since the shape isn't known ahead of time.",
-};
-
 const EXPANDS = {
   managedDevices: ["detectedApps", "users", "deviceCategory"],
   cloudPCs: [],
@@ -1203,6 +1171,139 @@ function needsConsistency(params, res) {
   // advanced-query territory, which needs ConsistencyLevel:eventual + $count. Adding them is
   // harmless for the simple cases and required for the rest.
   return hasFilter || hasOrderby || hasExpand || hasCount;
+}
+
+// ── Query URL Diagram: visual breakdown of the API URL ──
+function QueryDiagram({ method, version, res, params, consistencyOn, objectId, path: resPath }) {
+  const segments = [];
+  segments.push({ label: "Base", value: "https://graph.microsoft.com", color: C.dim, desc: "Microsoft Graph API root" });
+  segments.push({ label: "Version", value: version, color: C.version, desc: version === "v1.0" ? "Stable, production endpoint" : "Preview endpoint" });
+  segments.push({ label: "Resource", value: resPath, color: C.resource, desc: res.label || "Custom path" });
+
+  const queryParts = [];
+  for (const p of params) {
+    if (p.type === "select" && p.props.length)
+      queryParts.push({ label: "$select", value: p.props.join(", "), color: paramColor("select"), desc: `${p.props.length} column${p.props.length > 1 ? "s" : ""}` });
+    if (p.type === "filter" && p.clauses?.some((c) => c.prop && c.val !== "")) {
+      const cls = p.clauses.filter((c) => c.prop && c.val !== "");
+      queryParts.push({ label: "$filter", value: cls.map((c) => `${c.prop} ${c.op} ${c.val}`).join(` ${p.join} `), color: paramColor("filter"), desc: `${cls.length} condition${cls.length > 1 ? "s" : ""}` });
+    }
+    if (p.type === "top" && p.value)
+      queryParts.push({ label: "$top", value: p.value, color: paramColor("top"), desc: `Max ${p.value} rows` });
+    if (p.type === "orderby" && p.prop)
+      queryParts.push({ label: "$orderby", value: `${p.prop} ${p.dir}`, color: paramColor("orderby"), desc: p.dir === "asc" ? "Ascending" : "Descending" });
+    if (p.type === "count")
+      queryParts.push({ label: "$count", value: "true", color: paramColor("count"), desc: "Include total" });
+    if (p.type === "expand" && p.value)
+      queryParts.push({ label: "$expand", value: p.value, color: paramColor("expand"), desc: "Join related data" });
+  }
+  if (consistencyOn)
+    queryParts.push({ label: "Header", value: "ConsistencyLevel: eventual", color: C.header, desc: "Auto-added" });
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 items-center" style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.6 }}>
+        <span style={{ padding: "4px 8px", borderRadius: 6, fontWeight: 700, fontSize: 11, color: C.ink, background: method === "GET" ? C.method : C.danger }}>{method}</span>
+        {segments.map((s, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span style={{ color: C.dim }}>/</span>}
+            <span
+              style={{ padding: "4px 8px", borderRadius: 6, background: hexA(s.color, 0.12), color: s.color, fontWeight: 500, cursor: "default" }}
+              title={s.desc}
+            >{s.value}</span>
+          </React.Fragment>
+        ))}
+        {objectId.trim() && (
+          <>
+            <span style={{ color: C.dim }}>/</span>
+            <span style={{ padding: "4px 8px", borderRadius: 6, background: hexA(C.resource, 0.12), color: C.resource }} title="Single object by ID">{objectId.trim().length > 20 ? objectId.trim().slice(0, 20) + "..." : objectId.trim()}</span>
+          </>
+        )}
+      </div>
+      {queryParts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {queryParts.map((q, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 6, background: hexA(q.color, 0.08), border: `1px solid ${hexA(q.color, 0.25)}`, fontSize: 11, fontFamily: MONO }}>
+              <span style={{ fontWeight: 700, color: q.color }}>{q.label}</span>
+              <span style={{ color: C.text, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.value}</span>
+              <span style={{ color: C.dim, fontSize: 10, fontFamily: SANS }}>{q.desc}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Response Shape Preview: skeleton of expected JSON ──
+function ResponsePreview({ res, params, method }) {
+  if (method !== "GET") return <p style={{ fontSize: 12, color: C.dim }}>Response shape depends on the request body and action endpoint.</p>;
+
+  const selectedProps = params.find((p) => p.type === "select")?.props || [];
+  const expandParam = params.find((p) => p.type === "expand");
+  const hasCount = params.some((p) => p.type === "count");
+  const cols = selectedProps.length > 0 ? selectedProps : (res.props || []).slice(0, 5);
+  const expandName = expandParam?.value?.split("(")[0] || null;
+
+  const sampleVal = (prop) => {
+    if (/date|time|created|modified|last/i.test(prop)) return '"2025-01-15T08:30:00Z"';
+    if (/^(is[A-Z]|enabled|compliant|managed|registered|accountEnabled)/i.test(prop)) return "true";
+    if (/id$/i.test(prop)) return '"00000000-0000-..."';
+    if (/mail$|email/i.test(prop)) return '"user@contoso.com"';
+    if (/name|title|subject|display/i.test(prop)) return '"Contoso Example"';
+    if (/state|status|level|type|severity|category/i.test(prop)) return '"active"';
+    if (/version/i.test(prop)) return '"10.0.22631"';
+    if (/count|priority|score/i.test(prop)) return "42";
+    return '"..."';
+  };
+
+  const ind = (n) => "  ".repeat(n);
+  const lines = [];
+  lines.push({ t: "{", c: C.text });
+  if (hasCount) lines.push({ t: `${ind(1)}"@odata.count": 147,`, c: C.dim });
+  lines.push({ t: `${ind(1)}"value": [`, c: C.text });
+  lines.push({ t: `${ind(2)}{`, c: C.text });
+  cols.forEach((prop, i) => {
+    const comma = (i < cols.length - 1 || expandName) ? "," : "";
+    lines.push({ t: `${ind(3)}`, k: prop, v: `${sampleVal(prop)}${comma}`, kc: C.resource });
+  });
+  if (expandName) {
+    const nestedSelect = expandParam?.value?.match(/\$select=([^)]+)/)?.[1]?.split(",") || ["displayName", "id"];
+    const isSingle = /^manager$/.test(expandName);
+    if (isSingle) {
+      lines.push({ t: `${ind(3)}`, k: expandName, v: "{", kc: paramColor("expand") });
+      nestedSelect.forEach((p, i) => {
+        lines.push({ t: `${ind(4)}`, k: p.trim(), v: `${sampleVal(p.trim())}${i < nestedSelect.length - 1 ? "," : ""}`, kc: C.dim });
+      });
+      lines.push({ t: `${ind(3)}}`, c: C.text });
+    } else {
+      lines.push({ t: `${ind(3)}`, k: expandName, v: "[", kc: paramColor("expand") });
+      lines.push({ t: `${ind(4)}{`, c: C.text });
+      nestedSelect.forEach((p, i) => {
+        lines.push({ t: `${ind(5)}`, k: p.trim(), v: `${sampleVal(p.trim())}${i < nestedSelect.length - 1 ? "," : ""}`, kc: C.dim });
+      });
+      lines.push({ t: `${ind(4)}}`, c: C.text });
+      lines.push({ t: `${ind(3)}]`, c: C.text });
+    }
+  }
+  lines.push({ t: `${ind(2)}}`, c: C.text });
+  lines.push({ t: `${ind(1)}]`, c: C.text });
+  lines.push({ t: "}", c: C.text });
+
+  return (
+    <div>
+      <pre style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.65, color: C.text, background: hexA(C.bg, 0.5), border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", margin: 0, overflowX: "auto" }}>
+        {lines.map((l, i) => (
+          <div key={i}>
+            {l.k ? <>{l.t}<span style={{ color: l.kc }}>"{l.k}"</span>: <span style={{ color: /^"/.test(l.v) ? C.version : /^\d|^true|^false/.test(l.v) ? C.method : C.text }}>{l.v}</span></> : <span style={{ color: l.c }}>{l.t}</span>}
+          </div>
+        ))}
+      </pre>
+      <p style={{ fontSize: 10.5, color: C.dim, marginTop: 6 }}>
+        {selectedProps.length > 0 ? `${selectedProps.length} selected columns` : `Default properties (${cols.length} shown)`}{expandName ? ` + ${expandName}` : ""}{hasCount ? " + count" : ""}
+      </p>
+    </div>
+  );
 }
 
 // ── tiny UI atoms ────────────────────────────────────────────
@@ -1502,98 +1603,6 @@ function ChartsView({ rows, C }) {
   );
 }
 
-// ── Explain this query: narrate the current query block-by-block (Learn mode) ──
-const OP_PHRASE = { eq: "equals", ne: "is not", startswith: "starts with", contains: "contains", ge: "is ≥", le: "is ≤" };
-function ExplainView({ method, version, res, params, consistencyOn, objectId, queryScope, resourceId }) {
-  const rows = [];
-  const code = (t) => <span style={{ fontFamily: MONO, color: C.resource }}>{t}</span>;
-
-  // method
-  rows.push({ tag: method, kind: "method", color: C.method, body:
-    method === "GET" ? <><b>Read</b> data without changing anything — safe to run repeatedly, no writes hit your tenant.</>
-    : method === "DELETE" ? <><b>Removes</b> the target object. Irreversible — there's no undo on a Graph DELETE.</>
-    : <><b>{method === "POST" ? "Creates or invokes" : "Modifies"}</b> — this sends a real change to your tenant when you Run it. Graph Builder stages writes for you to review first.</>
-  });
-
-  // version
-  rows.push({ tag: version, kind: "version", color: C.version, body:
-    version === "v1.0"
-      ? <>The <b>stable, production</b> endpoint — Microsoft guarantees its shape won't break. {code("beta")} exposes newer fields but can change without notice.</>
-      : <><b>Preview</b> surface — newer resources and fields live here, but Microsoft can change them without notice. Don't build production automation on {code("beta")}.</>
-  });
-
-  // resource
-  rows.push({ tag: "/" + res.path, kind: "resource", color: C.resource, body:
-    <>The collection you're querying{res.label && res.id !== "custom" ? <> — <b>{res.label}</b></> : ""}. {res.dir ? <>This is a <b>directory object</b>, so advanced query options need the consistency header (see below).</> : <>Returns a paged list of objects.</>}{GOTCHAS[res.id] ? <><br/><span style={{ color: C.method, fontSize: 12 }}>⚠ {GOTCHAS[res.id]}</span></> : null}</>
-  });
-
-  // object id
-  if (objectId.trim()) {
-    rows.push({ tag: "/{id}", kind: "single object", color: C.resource, body:
-      <>Fetches <b>one object</b> by id ({code(objectId.trim().slice(0, 28) + (objectId.trim().length > 28 ? "…" : ""))}) instead of the whole collection. Query params like {code("$filter")} don't apply when you target a single item.</>
-    });
-  }
-
-  // params
-  for (const p of params) {
-    if (p.type === "select") {
-      const cols = p.props || [];
-      rows.push({ tag: "$select", kind: "query param", color: paramColor("select"), body:
-        cols.length
-          ? <>Returns <b>only</b> these {cols.length} column{cols.length > 1 ? "s" : ""} instead of the full object: {cols.map((c, i) => <React.Fragment key={c}>{i ? ", " : ""}{code(c)}</React.Fragment>)}. Smaller, faster responses — always select what you actually need.</>
-          : <>Will trim the response to chosen columns once you pick some. Empty right now, so the full default object comes back.</>
-      });
-    } else if (p.type === "filter") {
-      const cls = (p.clauses || []).filter((c) => c.prop && c.val !== "");
-      rows.push({ tag: "$filter", kind: "query param", color: paramColor("filter"), body:
-        cls.length
-          ? <>Keeps only rows where {cls.map((c, i) => { const isBool = res?.bools?.includes(c.prop); return <React.Fragment key={i}>{i ? <> <b>{p.join}</b> </> : ""}{code(c.prop)} {OP_PHRASE[c.op] || c.op} {code(isBool || /^-?\d+$/.test((c.val||"").trim()) ? c.val : `'${c.val}'`)}</React.Fragment>; })}. {cls.some((c) => res?.bools?.includes(c.prop)) ? <>Booleans are written unquoted ({code("false")}, not {code("'false'")}).</> : ""}{consistencyOn && res?.dir ? <><br/><span style={{ color: C.method, fontSize: 12 }}>⚠ Filtering a directory object this way is an <b>advanced query</b> — Graph requires the {code("ConsistencyLevel: eventual")} header + {code("$count=true")}, both added automatically.</span></> : ""}</>
-          : <>Narrows the result set once you add a clause (property + operator + value).</>
-      });
-    } else if (p.type === "top") {
-      rows.push({ tag: `$top=${p.value || "?"}`, kind: "query param", color: paramColor("top"), body:
-        <>Returns at most <b>{p.value || "N"} rows per page</b>. If more match, the response carries an {code("@odata.nextLink")} — use <b>Load next page</b> or <b>Load all pages</b> to follow it.</>
-      });
-    } else if (p.type === "orderby") {
-      rows.push({ tag: "$orderby", kind: "query param", color: paramColor("orderby"), body:
-        <>Sorts the results by {code(p.prop || "a property")} {code(p.dir || "asc")}. <span style={{ color: C.dim }}>Note: many Intune endpoints reject {code("$orderby")} on most properties and will 400.</span></>
-      });
-    } else if (p.type === "count") {
-      rows.push({ tag: "$count=true", kind: "query param", color: paramColor("count"), body:
-        <>Asks Graph to include the <b>total match count</b> as {code("@odata.count")} in the response — even across pages.</>
-      });
-    } else if (p.type === "expand") {
-      rows.push({ tag: "$expand", kind: "query param", color: paramColor("expand"), body:
-        <>Joins in related data — {code(p.value || "a relationship")} — in the same call, so you don't need a second query. The table flattens it into columns like {code((p.value || "rel").split("(")[0] + ".displayName")}.</>
-      });
-    }
-  }
-
-  // auto-added consistency header
-  if (consistencyOn) {
-    rows.push({ tag: "ConsistencyLevel", kind: "header · auto-added", color: C.header, body:
-      <>{code("eventual")} opts into Graph's <b>advanced query</b> engine — what makes the filter/count/orderby above legal on a directory resource. Graph Builder adds it for you whenever it's required.</>
-    });
-  }
-
-  return (
-    <div>
-      {rows.map((r, i) => (
-        <div key={i} className="flex gap-3.5" style={{ padding: "12px 2px", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-          <div style={{ flexShrink: 0, width: 200 }}>
-            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, padding: "4px 9px", borderRadius: 6, display: "inline-block", color: C.ink, background: r.color, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tag}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.dim, marginTop: 6, display: "block" }}>{r.kind}</span>
-          </div>
-          <div style={{ flex: 1, fontSize: 13, lineHeight: 1.6, color: C.text, minWidth: 0 }}>{r.body}</div>
-        </div>
-      ))}
-      <div style={{ marginTop: 14, padding: "11px 13px", borderRadius: 10, background: hexA(C.ok, 0.08), border: `1px solid ${hexA(C.ok, 0.28)}`, fontSize: 12.5, lineHeight: 1.55, color: C.text }}>
-        <b>Permission needed:</b> {code(queryScope)} <span style={{ color: C.dim }}>({method === "GET" ? "read-only" : "read-write"}, delegated). Least-privilege scope for this query — requested on Run, consented once.</span>
-      </div>
-    </div>
-  );
-}
-
 function toCSV(rows) {
   const flat = rows.map((r) => flattenRow(r));
   const cols = [];
@@ -1786,7 +1795,7 @@ const FAQ = [
   },
   {
     q: "What’s the PowerShell / SDK section for?",
-    a: "It shows the exact PowerShell command equivalent to your visual query — both Invoke-MgGraphRequest and the matching Get-Mg cmdlet. Great for learning the Graph PowerShell SDK, or for copying a working command into a script. Turn on Learn mode for inline explanations of what each piece does.",
+    a: "It shows the exact PowerShell command equivalent to your visual query — both Invoke-MgGraphRequest and the matching Get-Mg cmdlet. Great for learning the Graph PowerShell SDK, or for copying a working command into a script.",
   },
 ];
 
@@ -1805,15 +1814,6 @@ function FaqItem({ q, a }) {
       {open && (
         <p style={{ fontSize: 12.5, lineHeight: 1.6, color: C.dim, padding: "0 4px 12px" }}>{a}</p>
       )}
-    </div>
-  );
-}
-
-function Tip({ children }) {
-  return (
-    <div className="flex gap-2.5 mt-3 text-xs leading-relaxed" style={{ paddingLeft: 11, borderLeft: `2px solid ${hexA(C.param, 0.5)}`, color: C.dim }}>
-      <span style={{ flexShrink: 0, fontWeight: 700, fontSize: 9.5, letterSpacing: "0.08em", color: C.param, paddingTop: 1 }}>TIP</span>
-      <span>{children}</span>
     </div>
   );
 }
@@ -1885,7 +1885,6 @@ function GraphBlocks() {
   const [neededScopes, setNeededScopes] = useState([]);
   const [nextLink, setNextLink] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
-  const [learn, setLearn] = useState(true);
   const [theme, setTheme] = useState("dark");
   C = THEMES[theme];
   if (typeof document !== "undefined") {
@@ -3114,11 +3113,9 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                   </div>
                 </>
               )}
-              {learn && <Tip>This is the complete Microsoft Graph surface, extracted from Microsoft's official OpenAPI specs{graphIndexDate() ? <> · auto-refreshed weekly, last updated <b>{graphIndexDate()}</b></> : ""}. Switch the version block to browse beta vs v1.0.</Tip>}
             </>
           ) : (
             <>
-              {learn && <Tip>{GOTCHAS.custom}</Tip>}
               <p className="text-xs mt-2" style={{ color: C.dim }}>
                 Full-index browsing (27,000+ official Graph paths) activates when <span style={{ fontFamily: MONO, color: C.text }}>graph-paths.js</span> sits next to this file.
               </p>
@@ -3158,7 +3155,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             />
             <span className="text-xs" style={{ color: C.dim }}>rows (max 100 — each row is a real API call)</span>
           </div>
-          {learn && <Tip>This is the visual version of a PowerShell foreach loop — check Code &amp; snippets after running: the generated script shows the exact same loop, ready to run in a terminal. It's how admins script "get all X, then for each, get its Y".</Tip>}
         </Section>
       );
     }
@@ -3172,9 +3168,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             className="w-full"
             style={field()}
           />
-          {learn && SDK[res.id] && (
-            <Tip>With an ID, the SDK call switches to the -{SDK[res.id].id} parameter — and query params no longer apply, since you're fetching one object instead of a collection.</Tip>
-          )}
         </Section>
       );
     if (typeof editing === "number") {
@@ -3214,7 +3207,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             {!fullProps && !res.props.length && discoveredProps.length > 0 && (
               <p className="text-xs mt-2" style={{ color: C.resource }}>↑ Properties discovered from the last response.</p>
             )}
-            {learn && <Tip>{TIPS.select}</Tip>}
           </Section>
         );
       if (p.type === "filter")
@@ -3289,7 +3281,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 </>
               )}
             </div>
-            {learn && <Tip>{TIPS.filter}</Tip>}
           </Section>
         );
       if (p.type === "top")
@@ -3302,7 +3293,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               className="w-32"
               style={field()}
             />
-            {learn && <Tip>{TIPS.top}</Tip>}
           </Section>
         );
       if (p.type === "orderby")
@@ -3331,7 +3321,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               <Chip active={p.dir === "asc"} color={C.param} onClick={() => updateParam(editing, { dir: "asc" })}>asc</Chip>
               <Chip active={p.dir === "desc"} color={C.param} onClick={() => updateParam(editing, { dir: "desc" })}>desc</Chip>
             </div>
-            {learn ? <Tip>{TIPS.orderby}</Tip> : <p className="text-xs mt-2" style={{ color: C.dim }}>Heads up: many Intune endpoints reject $orderby on most properties.</p>}
+            <p className="text-xs mt-2" style={{ color: C.dim }}>Heads up: many Intune endpoints reject $orderby on most properties.</p>
           </Section>
         );
       if (p.type === "expand")
@@ -3348,14 +3338,12 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 <option key={x} value={x}>{x}</option>
               ))}
             </select>
-            {learn && <Tip>{TIPS.expand}</Tip>}
           </Section>
         );
       if (p.type === "count")
         return (
           <Section title="$count" accent={paramColor("count")} right={close}>
             <p className="text-sm" style={{ color: C.dim }}>Adds <span style={{ fontFamily: MONO, color: C.text }}>$count=true</span> — the total appears as <span style={{ fontFamily: MONO, color: C.text }}>@odata.count</span> in the response.</p>
-            {learn && <Tip>{TIPS.count}</Tip>}
           </Section>
         );
     }
@@ -3392,13 +3380,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               style={{ padding: "6px 10px", borderRadius: 8, fontSize: 14, fontWeight: 500, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, cursor: "pointer" }}
             >
               {theme === "dark" ? "Light" : "Dark"}
-            </button>
-            <button
-              onClick={() => setLearn(!learn)}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: learn ? hexA(C.param, 0.14) : "transparent", color: learn ? C.param : C.dim, border: `1px solid ${learn ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
-            >
-              {learn ? "Learn on" : "Learn"}
             </button>
             {/* divider */}
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
@@ -4115,7 +4096,6 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
               </div>
             </div>
           )}
-          {learn && GOTCHAS[res.id] && <Tip>{GOTCHAS[res.id]}</Tip>}
         </Section>
 
         {/* block editors */}
@@ -4179,12 +4159,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           </div>
         </div>
 
-        {/* Explain this query — Learn mode narration of the current query */}
-        {learn && (
-          <Section title="Explain this query" accent={C.param} right={<span style={{ fontSize: 10.5, color: C.dim }}>updates as you build · Learn mode</span>}>
-            <ExplainView method={method} version={version} res={res} params={params} consistencyOn={consistencyOn} objectId={objectId} queryScope={queryScope} resourceId={resourceId} />
+        {/* Query URL Diagram + Response Shape Preview */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 12 }}>
+          <Section title="URL anatomy" accent={C.resource}>
+            <QueryDiagram method={method} version={version} res={res} params={params} consistencyOn={consistencyOn} objectId={objectId} path={path} />
           </Section>
-        )}
+          <Section title="Response shape" accent={C.version}>
+            <ResponsePreview res={res} params={params} method={method} />
+          </Section>
+        </div>
 
         {/* REQUEST tabs */}
         <Section title="Request" accent={C.method}>
