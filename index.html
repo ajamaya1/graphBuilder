@@ -1926,6 +1926,7 @@ function GraphBlocks() {
   const [templCat, setTemplCat] = useState("all");
   const [loadedTemplate, setLoadedTemplate] = useState(null); // template currently loaded (for inverse/undo offer)
   const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops" | "health"
+  const [hdrMenu, setHdrMenu] = useState(null); // null | "dash" | "more" — header dropdowns
   const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
   const [dashLoading, setDashLoading] = useState(false);
   // ── Diff Snapshots ──
@@ -3358,6 +3359,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           color: ${C.text};
         }
         select optgroup { font-style: normal; font-weight: 700; color: ${C.dim}; }
+        .gb-workspace { display: grid; grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); gap: 18px; align-items: start; }
+        @media (max-width: 1100px) { .gb-workspace { grid-template-columns: minmax(0, 1fr); } }
       `}</style>
       <div className="mx-auto px-6 pt-7" style={{ maxWidth: 1600 }}>
 
@@ -3398,71 +3401,73 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             >
               AI
             </button>
-            <button
-              onClick={() => { setAsstOpen(!asstOpen); setAiOpen(false); setTemplOpen(false); setHistOpen(false); setHelpOpen(false); setDashOpen(null); setAsstError(null); }}
-              className="transition-colors"
-              style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: asstOpen ? hexA(C.version, 0.18) : hexA(C.version, 0.06), color: asstOpen ? C.version : C.dim, border: `1px solid ${asstOpen ? hexA(C.version, 0.45) : hexA(C.version, 0.18)}`, cursor: "pointer" }}
-              title="Chat with Claude — build a PowerShell script and run live read-only queries"
-            >
-              Assistant
-            </button>
             {/* divider */}
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
-            {/* secondary */}
-            <button
-              onClick={() => { setHistOpen(!histOpen); setHelpOpen(false); setAiOpen(false); }}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: histOpen ? hexA(C.resource, 0.14) : "transparent", color: histOpen ? C.resource : C.dim, border: `1px solid ${histOpen ? hexA(C.resource, 0.4) : C.line}`, cursor: "pointer" }}
-            >
-              History{history.length ? ` (${history.length})` : ""}
-            </button>
-            <button
-              onClick={() => { setWatchesOpen(!watchesOpen); setHistOpen(false); setHelpOpen(false); }}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: watchesOpen ? hexA(C.version, 0.14) : "transparent", color: watchesOpen ? C.version : C.dim, border: `1px solid ${watchesOpen ? hexA(C.version, 0.4) : C.line}`, cursor: "pointer" }}
-              title="View and manage query watches"
-            >
-              Watches{watches.length ? ` (${watches.length})` : ""}
-            </button>
-            <button
-              onClick={() => { setHelpOpen(!helpOpen); setHistOpen(false); }}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: helpOpen ? hexA(C.param, 0.14) : "transparent", color: helpOpen ? C.param : C.dim, border: `1px solid ${helpOpen ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
-            >
-              Help
-            </button>
-            <button
-              onClick={() => openDashboard("sysadmin")}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "sysadmin" ? hexA(C.ok, 0.14) : "transparent", color: dashOpen === "sysadmin" ? C.ok : C.dim, border: `1px solid ${dashOpen === "sysadmin" ? hexA(C.ok, 0.4) : C.line}`, cursor: "pointer" }}
-              title="Operational health dashboard"
-            >
-              SysAdmin
-            </button>
-            <button
-              onClick={() => openDashboard("exec")}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "exec" ? hexA(C.header, 0.14) : "transparent", color: dashOpen === "exec" ? C.header : C.dim, border: `1px solid ${dashOpen === "exec" ? hexA(C.header, 0.4) : C.line}`, cursor: "pointer" }}
-              title="Executive KPI dashboard"
-            >
-              Executive
-            </button>
-            <button
-              onClick={() => openDashboard("secops")}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "secops" ? hexA(C.danger, 0.14) : "transparent", color: dashOpen === "secops" ? C.danger : C.dim, border: `1px solid ${dashOpen === "secops" ? hexA(C.danger, 0.4) : C.line}`, cursor: "pointer" }}
-              title="Security operations dashboard"
-            >
-              SecOps
-            </button>
-            <button
-              onClick={() => openDashboard("health")}
-              className="transition-colors"
-              style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: dashOpen === "health" ? hexA(C.version, 0.14) : "transparent", color: dashOpen === "health" ? C.version : C.dim, border: `1px solid ${dashOpen === "health" ? hexA(C.version, 0.4) : C.line}`, cursor: "pointer" }}
-              title="Morning briefing — service health, expiring secrets, stale accounts"
-            >
-              Health
-            </button>
+            {/* dashboards dropdown */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setHdrMenu(hdrMenu === "dash" ? null : "dash")}
+                className="transition-colors"
+                style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: (hdrMenu === "dash" || dashOpen) ? hexA(C.param, 0.14) : "transparent", color: (hdrMenu === "dash" || dashOpen) ? C.param : C.dim, border: `1px solid ${(hdrMenu === "dash" || dashOpen) ? hexA(C.param, 0.4) : C.line}`, cursor: "pointer" }}
+                title="Open a live tenant dashboard"
+              >
+                Dashboards ▾
+              </button>
+              {hdrMenu === "dash" && (
+                <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 60, minWidth: 230, background: C.surface, border: `1px solid ${C.glassBorder}`, borderRadius: 12, boxShadow: "0 16px 48px rgba(0,0,0,0.35)", padding: 6 }}>
+                  {[
+                    ["sysadmin", "SysAdmin", "Day-to-day ops health"],
+                    ["exec", "Executive", "License & adoption rollup"],
+                    ["secops", "SecOps", "Alerts, incidents, risk"],
+                    ["health", "Health", "Morning briefing & service status"],
+                  ].map(([key, label, desc]) => (
+                    <div
+                      key={key}
+                      onClick={() => { setHdrMenu(null); openDashboard(key); }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = hexA(C.param, 0.1); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = dashOpen === key ? hexA(C.param, 0.12) : "transparent"; }}
+                      style={{ padding: "9px 11px", borderRadius: 8, cursor: "pointer", background: dashOpen === key ? hexA(C.param, 0.12) : "transparent" }}
+                    >
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>{label}</div>
+                      <div style={{ fontSize: 10.5, color: C.dim, marginTop: 1 }}>{desc}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* overflow menu */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setHdrMenu(hdrMenu === "more" ? null : "more")}
+                className="transition-colors"
+                style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: hdrMenu === "more" ? hexA(C.resource, 0.14) : "transparent", color: hdrMenu === "more" ? C.resource : C.dim, border: `1px solid ${hdrMenu === "more" ? hexA(C.resource, 0.4) : C.line}`, cursor: "pointer" }}
+                title="More — Assistant, History, Watches, Help"
+              >
+                ⋯
+              </button>
+              {hdrMenu === "more" && (
+                <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 60, minWidth: 200, background: C.surface, border: `1px solid ${C.glassBorder}`, borderRadius: 12, boxShadow: "0 16px 48px rgba(0,0,0,0.35)", padding: 6 }}>
+                  {[
+                    ["Assistant", "Chat with Claude — build & run queries", () => { setAsstOpen(true); setAiOpen(false); setTemplOpen(false); setHistOpen(false); setHelpOpen(false); setDashOpen(null); setAsstError(null); }],
+                    [`History${history.length ? ` (${history.length})` : ""}`, "Recently run queries", () => { setHistOpen(true); setHelpOpen(false); setAiOpen(false); }],
+                    [`Watches${watches.length ? ` (${watches.length})` : ""}`, "Scheduled query watches", () => { setWatchesOpen(true); setHistOpen(false); setHelpOpen(false); }],
+                    ["Help", "FAQ & getting started", () => { setHelpOpen(true); setHistOpen(false); }],
+                  ].map(([label, desc, fn]) => (
+                    <div
+                      key={label}
+                      onClick={() => { setHdrMenu(null); fn(); }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = hexA(C.resource, 0.1); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      style={{ padding: "9px 11px", borderRadius: 8, cursor: "pointer" }}
+                    >
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>{label}</div>
+                      <div style={{ fontSize: 10.5, color: C.dim, marginTop: 1 }}>{desc}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {hdrMenu && <div onClick={() => setHdrMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 55 }} />}
             {/* divider */}
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
             {account ? (
@@ -3909,7 +3914,9 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         )}
 
 
-        <div className="space-y-5 pb-16 px-4" style={{ maxWidth: 1180, margin: "0 auto" }}>
+        <div className="pb-16 px-4" style={{ maxWidth: 1600, margin: "0 auto" }}>
+        <div className="gb-workspace">
+        <div className="space-y-5" style={{ minWidth: 0 }}>{/* left column: build */}
 
         {/* canvas */}
         <Section
@@ -4106,6 +4113,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         )}
         {EditorPanel()}
 
+        </div>{/* end left column */}
+        <div className="space-y-5" style={{ minWidth: 0 }}>{/* right column: run & inspect */}
 
         {/* request URL bar */}
         <div className="flex items-center gap-2 flex-wrap" style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 20, padding: "10px 14px", boxShadow: `${C.glassShadow}, ${C.glassHighlight}` }}>
@@ -4384,9 +4393,27 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
                 {nextLink && (<div className="mt-3 flex items-center gap-2"><button onClick={() => run(nextLink)} disabled={running} style={{ ...ghostBtn(C.ok), padding: "7px 14px" }}>{running ? "Loading…" : "Load next page →"}</button><button onClick={loadAllPages} disabled={running} style={{ ...ghostBtn(C.version), padding: "7px 14px" }} title="Follow every @odata.nextLink and combine all pages (capped at 50 pages per click)">{running ? "Loading…" : "Load all pages ⇊"}</button></div>)}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center text-center py-12" style={{ color: C.dim }}>
-                <div style={{ fontSize: 32, opacity: 0.4 }}>⬡</div>
-                <p className="text-sm mt-2">Build a query above, then <b>Run</b> — results land here.</p>
+              <div className="py-6" style={{ color: C.dim }}>
+                <p className="text-sm text-center mb-4">No results yet — run your query, or start from a proven report:</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, maxWidth: 920, margin: "0 auto" }}>
+                  {[
+                    { name: "Non-Compliant Device Remediation Report", title: "Non-compliant devices", desc: "Intune devices failing compliance — a remediation-ready worklist", color: C.method },
+                    { name: "Oldest-Guest Cleanup Report", title: "Stale guest accounts", desc: "Longest-standing guests first — recertify or remove", color: C.param },
+                    { name: "Risky Sign-in Report", title: "Risky sign-ins", desc: "Identity Protection detections with location & device", color: C.version },
+                  ].map((c) => (
+                    <div
+                      key={c.name}
+                      onClick={() => loadTemplateByName(c.name)}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = hexA(c.color, 0.07); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = hexA(C.text, 0.02); }}
+                      style={{ background: hexA(C.text, 0.02), border: `1px solid ${hexA(c.color, 0.28)}`, borderLeft: `3px solid ${c.color}`, borderRadius: 12, padding: "13px 15px", cursor: "pointer", textAlign: "left" }}
+                      title={`Load the ${c.name} template`}
+                    >
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, marginBottom: 3 }}>{c.title}</div>
+                      <div style={{ fontSize: 11.5, color: C.dim, lineHeight: 1.5 }}>{c.desc}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )
           )}
@@ -4502,6 +4529,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           )}
         </Section>
 
+        </div>{/* end right column */}
+        </div>{/* end workspace grid */}
         </div>{/* end body */}
 
         {bulkOpen && (
