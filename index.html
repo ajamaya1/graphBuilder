@@ -1927,6 +1927,7 @@ function GraphBlocks() {
   const [loadedTemplate, setLoadedTemplate] = useState(null); // template currently loaded (for inverse/undo offer)
   const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops" | "health"
   const [hdrMenu, setHdrMenu] = useState(null); // null | "dash" | "more" — header dropdowns
+  const [insightTab, setInsightTab] = useState("anatomy"); // "anatomy" | "shape"
   const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
   const [dashLoading, setDashLoading] = useState(false);
   // ── Diff Snapshots ──
@@ -3359,7 +3360,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           color: ${C.text};
         }
         select optgroup { font-style: normal; font-weight: 700; color: ${C.dim}; }
-        .gb-workspace { display: grid; grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); gap: 18px; align-items: start; }
+        .gb-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
         @media (max-width: 1100px) { .gb-workspace { grid-template-columns: minmax(0, 1fr); } }
       `}</style>
       <div className="mx-auto px-6 pt-7" style={{ maxWidth: 1600 }}>
@@ -3915,6 +3916,59 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
 
 
         <div className="pb-16 px-4" style={{ maxWidth: 1600, margin: "0 auto" }}>
+
+        {/* command bar: full-width request URL + run */}
+        <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 20, background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 20, padding: "10px 14px", boxShadow: `${C.glassShadow}, ${C.glassHighlight}` }}>
+          <div className="flex items-center gap-3" style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0, fontFamily: MONO, background: method === "GET" ? hexA(C.method, 0.12) : hexA(C.danger, 0.12), padding: "2px 7px", borderRadius: 5 }}>{method}</span>
+            <code className="flex-1 text-xs" style={{ fontFamily: MONO, color: C.resource, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>{url}</code>
+          </div>
+          <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
+            {loadedTemplate?.inverse && (
+              <button
+                onClick={loadInverse}
+                style={{ ...ghostBtn(C.version), padding: "5px 12px", fontSize: 12 }}
+                title={`Swap this for its inverse: ${loadedTemplate.inverse.label}`}
+              >
+                Inverse: {loadedTemplate.inverse.label}
+              </button>
+            )}
+            <CopyBtn text={url} />
+            <button
+              onClick={saveCurrentQuery}
+              style={{ ...ghostBtn(C.resource), padding: "5px 12px", fontSize: 12 }}
+              title="Save this query to reuse later"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); setLoadedTemplate(null); }}
+              style={{ ...ghostBtn(), padding: "5px 12px", fontSize: 12 }}
+              title="Clear query and start fresh"
+            >
+              ✕ Clear
+            </button>
+            <button
+              onClick={() => run()}
+              disabled={running || betaWarn || !account}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 20px", borderRadius: 20, fontSize: 12.5, fontWeight: 700,
+                background: !account ? C.panel : (method === "GET" ? C.ok : C.danger),
+                color: !account ? C.dim : "#fff",
+                border: !account ? `1px solid ${C.line}` : "none",
+                cursor: running || betaWarn || !account ? "default" : "pointer",
+                opacity: running || betaWarn ? 0.5 : 1,
+                letterSpacing: "0.01em",
+                boxShadow: !account || running || betaWarn ? "none" : `0 0 0 1px ${hexA(method === "GET" ? C.ok : C.danger, 0.5)}, 0 2px 8px ${hexA(method === "GET" ? C.ok : C.danger, 0.25)}`,
+              }}
+              title={!account ? "Sign in (top right) to run" : `Run ${method}`}
+            >
+              {running ? (chainProgress ? `Looping ${chainProgress}…` : "Running…") : !account ? "Sign in to run" : `▶ Run`}
+            </button>
+          </div>
+        </div>
+
         <div className="gb-workspace">
         <div className="space-y-5" style={{ minWidth: 0 }}>{/* left column: build */}
 
@@ -4116,67 +4170,22 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         </div>{/* end left column */}
         <div className="space-y-5" style={{ minWidth: 0 }}>{/* right column: run & inspect */}
 
-        {/* request URL bar */}
-        <div className="flex items-center gap-2 flex-wrap" style={{ background: C.glass, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: `1px solid ${C.glassBorder}`, borderRadius: 20, padding: "10px 14px", boxShadow: `${C.glassShadow}, ${C.glassHighlight}` }}>
-          <div className="flex items-center gap-3" style={{ flex: "1 1 240px", minWidth: 0 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: method === "GET" ? C.method : C.danger, flexShrink: 0, fontFamily: MONO, background: method === "GET" ? hexA(C.method, 0.12) : hexA(C.danger, 0.12), padding: "2px 7px", borderRadius: 5 }}>{method}</span>
-            <code className="flex-1 text-xs" style={{ fontFamily: MONO, color: C.resource, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>{url}</code>
-          </div>
-          <div className="flex gap-1.5" style={{ flexShrink: 0 }}>
-            {loadedTemplate?.inverse && (
-              <button
-                onClick={loadInverse}
-                style={{ ...ghostBtn(C.version), padding: "5px 12px", fontSize: 12 }}
-                title={`Swap this for its inverse: ${loadedTemplate.inverse.label}`}
-              >
-                Inverse: {loadedTemplate.inverse.label}
-              </button>
-            )}
-            <CopyBtn text={url} />
-            <button
-              onClick={saveCurrentQuery}
-              style={{ ...ghostBtn(C.resource), padding: "5px 12px", fontSize: 12 }}
-              title="Save this query to reuse later"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => { setMethod("GET"); setResourceId("custom"); setCustomPath(""); setObjectId(""); setParams([]); setEditing("custom"); setResult(null); setError(null); setRespHeaders(null); setRespStatus(null); setLastToken(""); setChainPath(""); setChainProgress(null); setLoadedTemplate(null); }}
-              style={{ ...ghostBtn(), padding: "5px 12px", fontSize: 12 }}
-              title="Clear query and start fresh"
-            >
-              ✕ Clear
-            </button>
-            <button
-              onClick={() => run()}
-              disabled={running || betaWarn || !account}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "6px 20px", borderRadius: 20, fontSize: 12.5, fontWeight: 700,
-                background: !account ? C.panel : (method === "GET" ? C.ok : C.danger),
-                color: !account ? C.dim : "#fff",
-                border: !account ? `1px solid ${C.line}` : "none",
-                cursor: running || betaWarn || !account ? "default" : "pointer",
-                opacity: running || betaWarn ? 0.5 : 1,
-                letterSpacing: "0.01em",
-                boxShadow: !account || running || betaWarn ? "none" : `0 0 0 1px ${hexA(method === "GET" ? C.ok : C.danger, 0.5)}, 0 2px 8px ${hexA(method === "GET" ? C.ok : C.danger, 0.25)}`,
-              }}
-              title={!account ? "Sign in (top right) to run" : `Run ${method}`}
-            >
-              {running ? (chainProgress ? `Looping ${chainProgress}…` : "Running…") : !account ? "Sign in to run" : `▶ Run`}
-            </button>
-          </div>
-        </div>
-
-        {/* Query URL Diagram + Response Shape Preview */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 12 }}>
-          <Section title="URL anatomy" accent={C.resource}>
+        {/* Query insight: URL anatomy / response shape */}
+        <Section title="Query insight" accent={C.resource}>
+          <Tabs
+            active={insightTab}
+            onChange={setInsightTab}
+            tabs={[
+              { id: "anatomy", label: "URL anatomy" },
+              { id: "shape", label: "Response shape" },
+            ]}
+          />
+          {insightTab === "anatomy" ? (
             <QueryDiagram method={method} version={version} res={res} params={params} consistencyOn={consistencyOn} objectId={objectId} path={path} />
-          </Section>
-          <Section title="Response shape" accent={C.version}>
+          ) : (
             <ResponsePreview res={res} params={params} method={method} />
-          </Section>
-        </div>
+          )}
+        </Section>
 
         {/* REQUEST tabs */}
         <Section title="Request" accent={C.method}>
