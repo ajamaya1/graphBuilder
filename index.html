@@ -1928,6 +1928,9 @@ function GraphBlocks() {
   const [dashOpen, setDashOpen] = useState(null); // null | "sysadmin" | "exec" | "secops" | "health"
   const [hdrMenu, setHdrMenu] = useState(null); // null | "dash" | "more" — header dropdowns
   const [insightTab, setInsightTab] = useState("anatomy"); // "anatomy" | "shape"
+  const [paletteOpen, setPaletteOpen] = useState(false); // Ctrl+K command palette
+  const [paletteQ, setPaletteQ] = useState("");
+  const [paletteIdx, setPaletteIdx] = useState(0);
   const [dashData, setDashData] = useState({}); // tileKey -> { status, value, err }
   const [dashLoading, setDashLoading] = useState(false);
   // ── Diff Snapshots ──
@@ -1978,6 +1981,39 @@ function GraphBlocks() {
   const betaWarn = res.betaOnly && version === "v1.0";
 
   // ── persist history, saved queries & pinned resources across sessions ──
+  // ── command palette: Ctrl/Cmd+K to open, Escape to close ──
+  useEffect(() => {
+    const h = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen((o) => !o); setPaletteQ(""); setPaletteIdx(0); }
+      else if (e.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  const PALETTE_DASHBOARDS = [
+    ["sysadmin", "SysAdmin dashboard", "Day-to-day ops health"],
+    ["exec", "Executive dashboard", "License & adoption rollup"],
+    ["secops", "SecOps dashboard", "Alerts, incidents, risk"],
+    ["health", "Health dashboard", "Morning briefing & service status"],
+  ];
+  const paletteItems = useMemo(() => {
+    const q = paletteQ.trim().toLowerCase();
+    const items = [];
+    if (!q) {
+      PALETTE_DASHBOARDS.forEach(([k, l, d]) => items.push({ group: "Dashboards", label: l, sub: d, act: () => openDashboard(k) }));
+      TEMPLATES.slice(6, 12).forEach((t) => items.push({ group: "Templates", label: t.name, sub: t.cat, act: () => loadTemplateByName(t.name) }));
+    } else {
+      TEMPLATES.filter((t) => (t.name + " " + t.desc + " " + t.cat).toLowerCase().includes(q)).slice(0, 7)
+        .forEach((t) => items.push({ group: "Templates", label: t.name, sub: t.desc, act: () => loadTemplateByName(t.name) }));
+      RESOURCES.filter((r) => r.id !== "custom" && (r.label + " " + r.path).toLowerCase().includes(q)).slice(0, 5)
+        .forEach((r) => items.push({ group: "Resources", label: "/" + r.path, sub: r.label, act: () => { setResourceId(r.id); setParams([]); setObjectId(""); setDiscoveredProps([]); setEditing(null); if (r.betaOnly) setVersion("beta"); } }));
+      PALETTE_DASHBOARDS.filter(([k, l, d]) => (l + " " + d).toLowerCase().includes(q))
+        .forEach(([k, l, d]) => items.push({ group: "Dashboards", label: l, sub: d, act: () => openDashboard(k) }));
+    }
+    return items;
+  }, [paletteQ]);
+
   useEffect(() => { LS.set(LS_KEYS.history, history); }, [history]);
   useEffect(() => { LS.set(LS_KEYS.saved, saved); }, [saved]);
   useEffect(() => { LS.set(LS_KEYS.pinned, pinned); }, [pinned]);
@@ -3389,6 +3425,15 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
             <span style={{ width: 1, height: 20, background: C.line, display: "inline-block", marginInline: 2 }} />
             {/* primary actions */}
             <button
+              onClick={() => { setPaletteOpen(true); setPaletteQ(""); setPaletteIdx(0); }}
+              className="transition-colors"
+              style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, cursor: "pointer" }}
+              title="Search templates, resources & dashboards"
+            >
+              Search
+              <span style={{ fontFamily: MONO, fontSize: 9.5, border: `1px solid ${C.line}`, borderRadius: 4, padding: "1px 5px", color: C.dim }}>Ctrl K</span>
+            </button>
+            <button
               onClick={() => { setTemplOpen(!templOpen); setAiOpen(false); setHistOpen(false); setHelpOpen(false); }}
               className="transition-colors"
               style={{ padding: "6px 13px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: templOpen ? hexA(C.resource, 0.16) : hexA(C.resource, 0.06), color: templOpen ? C.resource : C.dim, border: `1px solid ${templOpen ? hexA(C.resource, 0.45) : hexA(C.resource, 0.18)}`, cursor: "pointer" }}
@@ -4541,6 +4586,50 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         </div>{/* end right column */}
         </div>{/* end workspace grid */}
         </div>{/* end body */}
+
+        {/* command palette (Ctrl+K) */}
+        {paletteOpen && (
+          <div onClick={() => setPaletteOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", zIndex: 70 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620, margin: "100px auto 0", background: C.surface, border: `1px solid ${C.glassBorder}`, borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,0.5)", overflow: "hidden" }}>
+              <input
+                autoFocus
+                value={paletteQ}
+                onChange={(e) => { setPaletteQ(e.target.value); setPaletteIdx(0); }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setPaletteIdx((i) => Math.min(i + 1, paletteItems.length - 1)); }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); setPaletteIdx((i) => Math.max(i - 1, 0)); }
+                  else if (e.key === "Enter" && paletteItems[paletteIdx]) { paletteItems[paletteIdx].act(); setPaletteOpen(false); }
+                }}
+                placeholder="Search templates, resources, dashboards…"
+                style={{ width: "100%", padding: "14px 18px", fontSize: 14, background: "transparent", border: "none", outline: "none", color: C.text, borderBottom: `1px solid ${C.line}`, fontFamily: SANS }}
+              />
+              <div style={{ maxHeight: 380, overflowY: "auto", padding: 6 }}>
+                {paletteItems.length === 0 && (
+                  <p style={{ padding: 14, fontSize: 12.5, color: C.dim }}>No matches — try a resource like <span style={{ fontFamily: MONO }}>devices</span> or a report like <span style={{ fontFamily: MONO }}>stale</span>.</p>
+                )}
+                {paletteItems.map((it, i) => (
+                  <div
+                    key={`${it.group}-${it.label}`}
+                    onClick={() => { it.act(); setPaletteOpen(false); }}
+                    onMouseEnter={() => setPaletteIdx(i)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, cursor: "pointer", background: i === paletteIdx ? hexA(C.param, 0.12) : "transparent" }}
+                  >
+                    <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: C.dim, width: 84, flexShrink: 0 }}>
+                      {(i === 0 || paletteItems[i - 1].group !== it.group) ? it.group : ""}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</div>
+                      <div style={{ fontSize: 11, color: C.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: "8px 16px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 14, fontSize: 10.5, color: C.dim, fontFamily: MONO }}>
+                <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {bulkOpen && (
           <div onClick={() => { if (!bulkRunning) setBulkOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }}>
