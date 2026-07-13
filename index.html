@@ -3075,6 +3075,89 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
   }, [rows, params, result]);
 
   // ── editor panel content ──
+  // ── persistent path browser: always visible in the left column, survives runs & template loads ──
+  function BrowsePanel() {
+    const idx = getPathIndex(version);
+    const q = customPath.trim().toLowerCase().replace(/^\//, "");
+    const terms = q.split(/[\s/]+/).filter(Boolean);
+    const matches =
+      idx && terms.length
+        ? idx.filter(([p]) => { const lp = p.toLowerCase(); return terms.every((t) => lp.includes(t)); }).slice(0, 30)
+        : [];
+    // top-level resource groups (first path segment), Graph Explorer style
+    const topGroups = idx && !terms.length ? (() => {
+      const seen = {};
+      for (const [p] of idx) {
+        const seg = p.split("/")[1];
+        if (seg && !seg.startsWith("{")) seen[seg] = (seen[seg] || 0) + 1;
+      }
+      return Object.keys(seen).sort().map((g) => [g, seen[g]]);
+    })() : null;
+    // picking a path activates custom mode (clearing stale params from the previous resource)
+    const pickPath = (p) => {
+      if (resourceId !== "custom") { setResourceId("custom"); setParams([]); setObjectId(""); setDiscoveredProps([]); }
+      setCustomPath(p.slice(1));
+    };
+    return (
+      <Section title={idx ? `Browse all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={idx && graphIndexDate() ? <span title="When this index was last rebuilt from Microsoft's official OpenAPI specs (auto-refreshes weekly)" style={{ fontSize: 10, color: C.dim, fontFamily: MONO, padding: "2px 8px", borderRadius: 999, border: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>● index updated {graphIndexDate()}</span> : null}>
+        <input
+          value={customPath}
+          onChange={(e) => setCustomPath(e.target.value)}
+          placeholder={idx ? "Search resources, e.g. autopilot or users messages" : "e.g. me/drive/root/children"}
+          className="w-full"
+          style={field()}
+        />
+        {idx ? (
+          <>
+            {terms.length > 0 ? (
+              <>
+                <p className="text-xs mt-2" style={{ color: C.dim }}>{matches.length} result{matches.length !== 1 ? "s" : ""} — tap to use.</p>
+                {matches.length > 0 && (
+                  <div className="mt-2 rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 320, overflowY: "auto" }}>
+                    {matches.map(([p, m]) => (
+                      <button
+                        key={p}
+                        onClick={() => pickPath(p)}
+                        className="w-full text-left px-3 py-2 flex items-center justify-between gap-2"
+                        style={{ borderBottom: `1px solid ${C.line}`, background: "/" + res.path === p ? C.panel : "transparent" }}
+                      >
+                        <span className="text-xs break-all" style={{ fontFamily: MONO, color: C.text }}>{p}</span>
+                        <span className="text-xs font-bold whitespace-nowrap" style={{ fontFamily: MONO, color: C.param }}>
+                          {m.split("").map((l) => METH_NAME[l][0] + METH_NAME[l].slice(1).toLowerCase()).join(" ")}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="mt-3 mb-4">
+                  <button
+                    onClick={() => { setTemplOpen(true); }}
+                    style={{ ...ghostBtn(C.resource), width: "100%", padding: "10px 14px", fontSize: 13 }}
+                  >
+                    Browse {TEMPLATES.length} reports & actions — Devices · Identity · Security · Governance ›
+                  </button>
+                </div>
+                <p className="text-xs mt-2 mb-1" style={{ color: C.dim }}>Resources available — expand a group to drill in, or search above.</p>
+                <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 340, overflowY: "auto" }}>
+                  {topGroups.map(([g, count]) => (
+                    <ResourceGroup key={g} group={g} count={count} idx={idx} onPick={pickPath} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <p className="text-xs mt-2" style={{ color: C.dim }}>
+            Full-index browsing (27,000+ official Graph paths) activates when <span style={{ fontFamily: MONO, color: C.text }}>graph-paths.js</span> sits next to this file.
+          </p>
+        )}
+      </Section>
+    );
+  }
+
   function EditorPanel() {
     if (editing === null) return null;
     const fullProps = (typeof window !== "undefined" && window.GRAPH_PROPS && window.GRAPH_PROPS[res.id]) || null;
@@ -3084,84 +3167,7 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
         Done
       </button>
     );
-    if (editing === "custom") {
-      const idx = getPathIndex(version);
-      const q = customPath.trim().toLowerCase().replace(/^\//, "");
-      const terms = q.split(/[\s/]+/).filter(Boolean);
-      const matches =
-        idx && terms.length
-          ? idx.filter(([p]) => { const lp = p.toLowerCase(); return terms.every((t) => lp.includes(t)); }).slice(0, 30)
-          : [];
-      // top-level resource groups (first path segment), Graph Explorer style
-      const topGroups = idx && !terms.length ? (() => {
-        const seen = {};
-        for (const [p] of idx) {
-          const seg = p.split("/")[1];
-          if (seg && !seg.startsWith("{")) seen[seg] = (seen[seg] || 0) + 1;
-        }
-        return Object.keys(seen).sort().map((g) => [g, seen[g]]);
-      })() : null;
-      return (
-        <Section title={idx ? `Browse all ${idx.length.toLocaleString()} ${version} Graph paths` : "Custom Graph path"} accent={C.resource} right={idx && graphIndexDate() ? <div className="flex items-center gap-2"><span title="When this index was last rebuilt from Microsoft's official OpenAPI specs (auto-refreshes weekly)" style={{ fontSize: 10, color: C.dim, fontFamily: MONO, padding: "2px 8px", borderRadius: 999, border: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>● index updated {graphIndexDate()}</span>{close}</div> : close}>
-          <input
-            value={customPath}
-            onChange={(e) => setCustomPath(e.target.value)}
-            placeholder={idx ? "Search resources, e.g. autopilot or users messages" : "e.g. me/drive/root/children"}
-            className="w-full"
-            style={field()}
-          />
-          {idx ? (
-            <>
-              {terms.length > 0 ? (
-                <>
-                  <p className="text-xs mt-2" style={{ color: C.dim }}>{matches.length} result{matches.length !== 1 ? "s" : ""} — tap to use.</p>
-                  {matches.length > 0 && (
-                    <div className="mt-2 rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 320, overflowY: "auto" }}>
-                      {matches.map(([p, m]) => (
-                        <button
-                          key={p}
-                          onClick={() => setCustomPath(p.slice(1))}
-                          className="w-full text-left px-3 py-2 flex items-center justify-between gap-2"
-                          style={{ borderBottom: `1px solid ${C.line}`, background: "/" + res.path === p ? C.panel : "transparent" }}
-                        >
-                          <span className="text-xs break-all" style={{ fontFamily: MONO, color: C.text }}>{p}</span>
-                          <span className="text-xs font-bold whitespace-nowrap" style={{ fontFamily: MONO, color: C.param }}>
-                            {m.split("").map((l) => METH_NAME[l][0] + METH_NAME[l].slice(1).toLowerCase()).join(" ")}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="mt-3 mb-4">
-                    <button
-                      onClick={() => { setTemplOpen(true); setEditing(null); }}
-                      style={{ ...ghostBtn(C.resource), width: "100%", padding: "10px 14px", fontSize: 13 }}
-                    >
-                      Browse {TEMPLATES.length} reports & actions — Devices · Identity · Security · Governance ›
-                    </button>
-                  </div>
-                  <p className="text-xs mt-2 mb-1" style={{ color: C.dim }}>Resources available — expand a group to drill in, or search above.</p>
-                  <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, maxHeight: 340, overflowY: "auto" }}>
-                    {topGroups.map(([g, count]) => (
-                      <ResourceGroup key={g} group={g} count={count} idx={idx} onPick={(p) => setCustomPath(p.slice(1))} />
-                    ))}
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-xs mt-2" style={{ color: C.dim }}>
-                Full-index browsing (27,000+ official Graph paths) activates when <span style={{ fontFamily: MONO, color: C.text }}>graph-paths.js</span> sits next to this file.
-              </p>
-            </>
-          )}
-        </Section>
-      );
-    }
+    if (editing === "custom") return null; // the persistent BrowsePanel below covers path search & entry
     if (editing === "chain") {
       const suggestions = CHAINS[res.id] || [];
       return (
@@ -4211,6 +4217,8 @@ Use version "beta" for Intune (deviceManagement), Cloud PCs, and Entra ID Protec
           </p>
         )}
         {EditorPanel()}
+
+        {BrowsePanel()}
 
         </div>{/* end left column */}
         <div className="space-y-5" style={{ minWidth: 0 }}>{/* right column: run & inspect */}
